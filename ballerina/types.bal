@@ -14,6 +14,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+import ballerina/ai;
 import ballerina/http;
 
 # Configurations for controlling the behaviours when communicating with a remote HTTP endpoint.
@@ -77,55 +78,51 @@ public type ConnectionConfig record {|
     boolean validation = true;
 |};
 
-# Model names available through the OpenRouter unified API.
-# OpenRouter model IDs use the format `provider/model-name`.
-@display {label: "OpenRouter Model Names"}
-public enum OPENROUTER_MODEL_NAMES {
-    # OpenAI GPT-4o — flagship multimodal model
-    OPENAI_GPT_4O = "openai/gpt-4o",
-    # OpenAI GPT-4o Mini — fast and affordable
-    OPENAI_GPT_4O_MINI = "openai/gpt-4o-mini",
-    # OpenAI GPT-4.1 — latest GPT-4 variant
-    OPENAI_GPT_4_1 = "openai/gpt-4.1",
-    # OpenAI o1 — reasoning model
-    OPENAI_O1 = "openai/o1",
-    # OpenAI o3 mini — efficient reasoning model
-    OPENAI_O3_MINI = "openai/o3-mini",
-    # Anthropic Claude 3.5 Sonnet — highly capable
-    ANTHROPIC_CLAUDE_3_5_SONNET = "anthropic/claude-3.5-sonnet",
-    # Anthropic Claude 3.5 Haiku — fast and affordable
-    ANTHROPIC_CLAUDE_3_5_HAIKU = "anthropic/claude-3.5-haiku",
-    # Anthropic Claude 3 Opus — most powerful Claude 3
-    ANTHROPIC_CLAUDE_3_OPUS = "anthropic/claude-3-opus",
-    # Anthropic Claude Sonnet 4 — latest Claude
-    ANTHROPIC_CLAUDE_SONNET_4 = "anthropic/claude-sonnet-4",
-    # Google Gemini Pro 1.5 — long context model
-    GOOGLE_GEMINI_PRO_1_5 = "google/gemini-pro-1.5",
-    # Google Gemini Flash 1.5 — fast and efficient
-    GOOGLE_GEMINI_FLASH_1_5 = "google/gemini-flash-1.5",
-    # Google Gemini Flash 2.0 — latest flash model
-    GOOGLE_GEMINI_FLASH_2_0 = "google/gemini-2.0-flash-001",
-    # Meta Llama 3.1 8B Instruct — small open model
-    META_LLAMA_3_1_8B = "meta-llama/llama-3.1-8b-instruct",
-    # Meta Llama 3.1 70B Instruct — mid-size open model
-    META_LLAMA_3_1_70B = "meta-llama/llama-3.1-70b-instruct",
-    # Meta Llama 3.1 405B Instruct — largest open model
-    META_LLAMA_3_1_405B = "meta-llama/llama-3.1-405b-instruct",
-    # Meta Llama 3.3 70B Instruct — latest Llama 3.3
-    META_LLAMA_3_3_70B = "meta-llama/llama-3.3-70b-instruct",
-    # Mistral 7B Instruct — efficient open model
-    MISTRAL_7B = "mistralai/mistral-7b-instruct",
-    # Mistral Large — Mistral's flagship model
-    MISTRAL_LARGE = "mistralai/mistral-large",
-    # Mixtral 8x7B Instruct — mixture-of-experts model
-    MIXTRAL_8X7B = "mistralai/mixtral-8x7b-instruct",
-    # DeepSeek Chat — strong open-source model
-    DEEPSEEK_CHAT = "deepseek/deepseek-chat",
-    # Microsoft Phi-3 Mini — small but capable model
-    MICROSOFT_PHI_3_MINI = "microsoft/phi-3-mini-128k-instruct",
-    # Free tier: Meta Llama 3.1 8B (no cost)
-    META_LLAMA_3_1_8B_FREE = "meta-llama/llama-3.1-8b-instruct:free"
+
+# Embedding model names available through the OpenRouter unified API.
+# These models convert text into vector representations for semantic search and RAG workflows.
+@display {label: "OpenRouter Embedding Model Names"}
+public enum OPENROUTER_EMBEDDING_MODEL_NAMES {
+    // ── OpenAI ──────────────────────────────────────────────────────────────
+    # OpenAI text-embedding-3-small — fast, efficient, and low-cost
+    OPENAI_TEXT_EMBEDDING_3_SMALL = "openai/text-embedding-3-small",
+    # OpenAI text-embedding-3-large — highest accuracy for OpenAI embeddings
+    OPENAI_TEXT_EMBEDDING_3_LARGE = "openai/text-embedding-3-large",
+    # OpenAI text-embedding-ada-002 — legacy embedding model
+    OPENAI_TEXT_EMBEDDING_ADA_002 = "openai/text-embedding-ada-002",
+    // ── Google ──────────────────────────────────────────────────────────────
+    # Google text-embedding-004 — Google's text embedding model
+    GOOGLE_TEXT_EMBEDDING_004 = "google/text-embedding-004",
+    // ── Mistral ─────────────────────────────────────────────────────────────
+    # Mistral Embed — Mistral's embedding model
+    MISTRAL_EMBED = "mistralai/mistral-embed"
 }
+
+// Internal types for OpenRouter embeddings API (/embeddings endpoint).
+
+type EmbeddingRequest record {|
+    string|string[] input;
+    string model;
+    string encoding_format = "float";
+|};
+
+// Open records so unknown OpenRouter fields are tolerated.
+type EmbeddingDataItem record {
+    float[] embedding;
+    int index;
+};
+
+type EmbeddingUsage record {
+    int prompt_tokens?;
+    int total_tokens?;
+};
+
+type EmbeddingResponse record {
+    string 'object;
+    EmbeddingDataItem[] data;
+    string model;
+    EmbeddingUsage usage?;
+};
 
 type ToolInfo readonly & record {|
     string toolList;
@@ -135,3 +132,63 @@ type ToolInfo readonly & record {|
 type LlmChatResponse record {|
     string content;
 |};
+
+// Minimal OpenRouter chat completion types (OpenAI-compatible subset).
+// Defined here to avoid depending on ballerinax/openai.chat.
+
+type ChatFunctionCall record {|
+    string name;
+    string arguments;
+|};
+
+type ChatToolCallFunction record {|
+    string name;
+    string arguments;
+|};
+
+type ChatToolCall record {
+    string id;
+    string 'type;
+    ChatToolCallFunction 'function;
+};
+
+// Open record so ai:ChatFunctionMessage / ai:ChatAssistantMessage values
+// are structurally compatible when pushed directly into the message list.
+type ChatRequestMessage record {
+    string role;
+    string? content?;
+    string name?; // non-nullable optional — absent from JSON when not set
+    ChatFunctionCall? function_call?;
+};
+
+type ChatCompletionRequest record {|
+    ChatRequestMessage[] messages;
+    string model;
+    int? max_completion_tokens?;
+    decimal? temperature?;
+    string|string[]? stop?;
+    ai:ChatCompletionFunctions[]? functions?;
+|};
+
+// Open records for responses so unknown OpenRouter fields are tolerated.
+type ChatUsage record {
+    int? prompt_tokens?;
+    int? completion_tokens?;
+};
+
+type ChatResponseMessage record {
+    string? content?;
+    ChatFunctionCall? function_call?;
+    ChatToolCall[]? tool_calls?;
+};
+
+type ChatCompletionChoice record {
+    string? finish_reason?;
+    ChatResponseMessage message;
+};
+
+type ChatCompletionResponse record {
+    string id;
+    ChatCompletionChoice[] choices;
+    ChatUsage? usage?;
+};

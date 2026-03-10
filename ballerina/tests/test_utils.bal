@@ -86,7 +86,7 @@ isolated function getExpectedParameterSchema(string message) returns map<json> {
     }
 
     if message.startsWith("Give me a random joke") {
-        return {"type": "object", "properties": {"result": {"type": "string"}}};
+        return {"type": "object", "properties": {"result": {"anyOf": [{"type": "string"}, {"type": "null"}]}}};
     }
 
     return {};

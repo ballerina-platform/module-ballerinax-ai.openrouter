@@ -87,9 +87,9 @@ final readonly & map<anydata>[] expectedContentPartsForRateBlog5 = [
     {
         "type": "text",
         "text": "Title: Tips for Growing a Beautiful Garden Content: " +
-        "Spring is the perfect time to start your garden. \n        Begin by preparing your soil " +
-        "with organic compost and ensure proper drainage. \n        Choose plants suitable for your " +
-        "climate zone, and remember to water them regularly. \n        Don't forget to mulch to retain " +
+        "Spring is the perfect time to start your garden.\n        Begin by preparing your soil " +
+        "with organic compost and ensure proper drainage.\n        Choose plants suitable for your " +
+        "climate zone, and remember to water them regularly.\n        Don't forget to mulch to retain " +
         "moisture and prevent weeds."
     },
     {"type": "text", "text": "."}
@@ -108,9 +108,9 @@ final readonly & map<anydata>[] expectedContentPartsForRateBlog8 = [
     {
         "type": "text",
         "text": "Title: Tips for Growing a Beautiful Garden Content: " +
-        "Spring is the perfect time to start your garden. \n        Begin by preparing your soil with " +
-        "organic compost and ensure proper drainage. \n        Choose plants suitable for your climate zone, " +
-        "and remember to water them regularly. \n        Don't forget to mulch to retain moisture and prevent weeds."
+        "Spring is the perfect time to start your garden.\n        Begin by preparing your soil with " +
+        "organic compost and ensure proper drainage.\n        Choose plants suitable for your climate zone, " +
+        "and remember to water them regularly.\n        Don't forget to mulch to retain moisture and prevent weeds."
     },
     {"type": "text", "text": "."}
 ];
@@ -120,16 +120,16 @@ final readonly & map<anydata>[] expectedContentPartsForRateBlog9 = [
     {
         "type": "text",
         "text": "Title: Tips for Growing a Beautiful Garden Content: " +
-        "Spring is the perfect time to start your garden. \n        Begin by preparing your soil with " +
-        "organic compost and ensure proper drainage. \n        Choose plants suitable for your climate zone, " +
-        "and remember to water them regularly. \n        Don't forget to mulch to retain moisture and prevent weeds."
+        "Spring is the perfect time to start your garden.\n        Begin by preparing your soil with " +
+        "organic compost and ensure proper drainage.\n        Choose plants suitable for your climate zone, " +
+        "and remember to water them regularly.\n        Don't forget to mulch to retain moisture and prevent weeds."
     },
     {
         "type": "text",
         "text": "Title: Tips for Growing a Beautiful Garden Content: " +
-        "Spring is the perfect time to start your garden. \n        " +
-        "Begin by preparing your soil with organic compost and ensure proper drainage. \n        " +
-        "Choose plants suitable for your climate zone, and remember to water them regularly. \n        " +
+        "Spring is the perfect time to start your garden.\n        " +
+        "Begin by preparing your soil with organic compost and ensure proper drainage.\n        " +
+        "Choose plants suitable for your climate zone, and remember to water them regularly.\n        " +
         "Don't forget to mulch to retain moisture and prevent weeds."
     },
     {"type": "text", "text": ". Thank you!"}

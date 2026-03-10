@@ -51,15 +51,18 @@ isolated function generateJsonSchemaForTypedesc(typedesc<json> expectedResponseT
         if isSimpleType(arrayMemberType) {
             return <JsonArraySchema>{
                 items: !nilableType ? {
-                    'type: getStringRepresentation(<typedesc<json>>arrayMemberType)
-                } :
-                {
-                   oneOf: [{
-                            'type: getStringRepresentation(<typedesc<json>>arrayMemberType)
-                        }, {
-                            'type: "null"
-                        }]
-                }
+                        'type: getStringRepresentation(<typedesc<json>>arrayMemberType)
+                    } :
+                    {
+                        oneOf: [
+                            {
+                                'type: getStringRepresentation(<typedesc<json>>arrayMemberType)
+                            },
+                            {
+                                'type: "null"
+                            }
+                        ]
+                    }
             };
         }
     }

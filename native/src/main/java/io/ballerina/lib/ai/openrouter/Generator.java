@@ -33,7 +33,7 @@ public class Generator {
                                   BObject prompt, BTypedesc expectedResponseTypedesc) {
         return env.getRuntime().callFunction(
                 new Module("ballerinax", "ai.openrouter", "1"), "generateLlmResponse", null,
-                modelProvider.get(StringUtils.fromString("httpClient")),
+                modelProvider.get(StringUtils.fromString("openrouterClient")),
                 modelProvider.get(StringUtils.fromString("modelType")), prompt, expectedResponseTypedesc,
                 modelProvider.get(StringUtils.fromString("requestHeaders")));
     }

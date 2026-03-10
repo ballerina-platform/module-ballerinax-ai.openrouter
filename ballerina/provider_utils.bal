@@ -243,7 +243,7 @@ isolated function generateLlmResponse(http:Client httpClient, string modelType,
     chat:CreateChatCompletionResponse|error response = httpClient->post(
         DEFAULT_CHAT_COMPLETION_PATH, request, requestHeaders);
     if response is error {
-        ai:Error err = error("LLM call failed: " + response.message(), detail = response.detail(), cause = response.cause());
+        ai:Error err = buildHttpError(response);
         span.close(err);
         return err;
     }
@@ -346,6 +346,50 @@ isolated function getChatMessageStringContent(ai:Prompt|string prompt) returns s
         promptStr += insertion.toString() + str;
     }
     return promptStr.trim();
+}
+
+isolated function buildHttpError(error httpError) returns ai:LlmConnectionError {
+    if httpError is http:ApplicationResponseError {
+        int statusCode = httpError.detail().statusCode;
+        anydata body = httpError.detail().body;
+        string bodyStr = body is string ? body : body.toBalString();
+        return error ai:LlmConnectionError(
+            string `OpenRouter API returned HTTP ${statusCode}: ${bodyStr}`, httpError);
+    }
+    return error ai:LlmConnectionError(
+        string `Failed to connect to OpenRouter: ${httpError.message()}`, httpError);
+}
+
+isolated function buildHttpClient(string apiKey, string serviceUrl,
+        ConnectionConfig connectionConfig) returns http:Client|ai:Error {
+    http:ClientHttp1Settings http1Settings = connectionConfig.http1Settings ?: {};
+    http:ClientHttp2Settings http2Settings = connectionConfig.http2Settings ?: {};
+    http:CacheConfig cache = connectionConfig.cache ?: {};
+    http:ResponseLimitConfigs responseLimits = connectionConfig.responseLimits ?: {};
+
+    http:ClientConfiguration httpConfig = {
+        auth: {token: apiKey},
+        httpVersion: connectionConfig.httpVersion,
+        http1Settings: http1Settings,
+        http2Settings: http2Settings,
+        timeout: connectionConfig.timeout,
+        forwarded: connectionConfig.forwarded,
+        poolConfig: connectionConfig.poolConfig,
+        cache: cache,
+        compression: connectionConfig.compression,
+        circuitBreaker: connectionConfig.circuitBreaker,
+        retryConfig: connectionConfig.retryConfig,
+        responseLimits: responseLimits,
+        secureSocket: connectionConfig.secureSocket,
+        proxy: connectionConfig.proxy,
+        validation: connectionConfig.validation
+    };
+
+    http:Client|error httpClient = new (serviceUrl, httpConfig);
+    if httpClient is error {
+        return error ai:Error("Failed to initialize HTTP client", httpClient);
+    }
+    return httpClient;
 }
 
 isolated function convertMessageToJson(ai:ChatMessage[]|ai:ChatMessage messages) returns json|ai:Error {

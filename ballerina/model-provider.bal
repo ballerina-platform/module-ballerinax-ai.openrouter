@@ -18,7 +18,6 @@ import ballerina/ai;
 import ballerina/ai.observe;
 import ballerina/http;
 import ballerina/jballerina.java;
-import ballerinax/openai.chat;
 
 const DEFAULT_OPENROUTER_SERVICE_URL = "https://openrouter.ai/api/v1";
 const DEFAULT_CHAT_COMPLETION_PATH = "/chat/completions";
@@ -30,8 +29,8 @@ const DEFAULT_TEMPERATURE = 0.7d;
 # Google, Meta, Mistral, and many other providers.
 public isolated distinct client class ModelProvider {
     *ai:ModelProvider;
-    private final http:Client httpClient;
-    private final OPENROUTER_MODEL_NAMES modelType;
+    private final http:Client openrouterClient;
+    private final string modelType;
     private final decimal temperature;
     private final int maxTokens;
     private final map<string|string[]> & readonly requestHeaders;
@@ -48,41 +47,18 @@ public isolated distinct client class ModelProvider {
     # + connectionConfig - Additional HTTP connection configuration
     # + return - `()` on successful initialization; otherwise, returns an `ai:Error`
     public isolated function init(@display {label: "API Key"} string apiKey,
-            @display {label: "Model Type"} OPENROUTER_MODEL_NAMES modelType,
+            @display {label: "Model Type"} string modelType,
             @display {label: "Service URL"} string serviceUrl = DEFAULT_OPENROUTER_SERVICE_URL,
             @display {label: "Site URL"} string? siteUrl = (),
             @display {label: "Site Name"} string? siteName = (),
             @display {label: "Maximum Tokens"} int maxTokens = DEFAULT_MAX_TOKEN_COUNT,
             @display {label: "Temperature"} decimal temperature = DEFAULT_TEMPERATURE,
             @display {label: "Connection Configuration"} *ConnectionConfig connectionConfig) returns ai:Error? {
-        http:ClientHttp1Settings http1Settings = connectionConfig.http1Settings ?: {};
-        http:ClientHttp2Settings http2Settings = connectionConfig.http2Settings ?: {};
-        http:CacheConfig cache = connectionConfig.cache ?: {};
-        http:ResponseLimitConfigs responseLimits = connectionConfig.responseLimits ?: {};
-
-        http:ClientConfiguration httpConfig = {
-            auth: {token: apiKey},
-            httpVersion: connectionConfig.httpVersion,
-            http1Settings: http1Settings,
-            http2Settings: http2Settings,
-            timeout: connectionConfig.timeout,
-            forwarded: connectionConfig.forwarded,
-            poolConfig: connectionConfig.poolConfig,
-            cache: cache,
-            compression: connectionConfig.compression,
-            circuitBreaker: connectionConfig.circuitBreaker,
-            retryConfig: connectionConfig.retryConfig,
-            responseLimits: responseLimits,
-            secureSocket: connectionConfig.secureSocket,
-            proxy: connectionConfig.proxy,
-            validation: connectionConfig.validation
-        };
-
-        http:Client|error httpClient = new (serviceUrl, httpConfig);
-        if httpClient is error {
-            return error ai:Error("Failed to initialize OpenRouterProvider", httpClient);
+        http:Client|ai:Error openrouterClient = buildHttpClient(apiKey, serviceUrl, connectionConfig);
+        if openrouterClient is ai:Error {
+            return openrouterClient;
         }
-        self.httpClient = httpClient;
+        self.openrouterClient = openrouterClient;
         self.modelType = modelType;
         self.temperature = temperature;
         self.maxTokens = maxTokens;
@@ -117,7 +93,7 @@ public isolated distinct client class ModelProvider {
             span.addInputMessages(inputMessage);
         }
 
-        chat:CreateChatCompletionRequest request = {
+        ChatCompletionRequest request = {
             max_completion_tokens: self.maxTokens,
             temperature: self.temperature,
             stop,
@@ -129,14 +105,14 @@ public isolated distinct client class ModelProvider {
             span.addTools(tools);
         }
 
-        chat:CreateChatCompletionResponse|error response = self.httpClient->post(
+        ChatCompletionResponse|error response = self.openrouterClient->post(
             DEFAULT_CHAT_COMPLETION_PATH, request, self.requestHeaders);
         if response is error {
-            ai:Error err = error ai:LlmConnectionError("Error while connecting to the model", response);
+            ai:Error err = buildHttpError(response);
             span.close(err);
             return err;
         }
-        chat:CreateChatCompletionResponse_choices[] choices = response.choices;
+        ChatCompletionChoice[] choices = response.choices;
         if choices.length() == 0 {
             ai:Error err = error ai:LlmInvalidResponseError("Empty response from the model when using function call API");
             span.close(err);
@@ -144,15 +120,15 @@ public isolated distinct client class ModelProvider {
         }
 
         span.addResponseId(response.id);
-        int? inputTokens = response.usage?.prompt_tokens;
+        int? inputTokens = response?.usage?.prompt_tokens;
         if inputTokens is int {
             span.addInputTokenCount(inputTokens);
         }
-        int? outputTokens = response.usage?.completion_tokens;
+        int? outputTokens = response?.usage?.completion_tokens;
         if outputTokens is int {
             span.addOutputTokenCount(outputTokens);
         }
-        string? finishReason = response.choices[0].finish_reason;
+        string? finishReason = response.choices[0]?.finish_reason;
         if finishReason is string {
             span.addFinishReason(finishReason);
         }
@@ -161,6 +137,16 @@ public isolated distinct client class ModelProvider {
         if message is ai:Error {
             span.close(message);
             return message;
+        }
+        if tools.length() > 0 && message.toolCalls is () {
+            string finishInfo = finishReason is string ? string ` (finish_reason: '${finishReason}')`  : "";
+            ai:Error err = error ai:LlmInvalidResponseError(
+                string `Model '${self.modelType}' did not return a tool call despite ${tools.length()} ` +
+                string `tool(s) being provided${finishInfo}. The model may not support function calling, ` +
+                "or it chose to respond with plain text. Try a model that supports tool use, or adjust the prompt."
+            );
+            span.close(err);
+            return err;
         }
         span.addOutputMessages(message);
         span.addOutputType(observe:TEXT);
@@ -181,42 +167,30 @@ public isolated distinct client class ModelProvider {
     } external;
 
     private isolated function prepareCompletionRequestMessages(ai:ChatMessage[]|ai:ChatUserMessage messages,
-            ai:ChatCompletionFunctions[] tools) returns chat:ChatCompletionRequestMessage[]|ai:Error {
-        chat:ChatCompletionRequestMessage[] chatCompletionRequestMessages = [];
+            ai:ChatCompletionFunctions[] tools) returns ChatRequestMessage[]|ai:Error {
+        ChatRequestMessage[] chatCompletionRequestMessages = [];
         if messages is ai:ChatUserMessage {
-            chatCompletionRequestMessages.push({
-                role: ai:USER,
-                content: check getChatMessageStringContent(messages.content),
-                name: messages.name
-            });
+            chatCompletionRequestMessages.push({role: ai:USER, content: check getChatMessageStringContent(messages.content)});
             return chatCompletionRequestMessages;
         }
         foreach ai:ChatMessage message in messages {
             if message is ai:ChatAssistantMessage {
-                chat:ChatCompletionRequestAssistantMessage assistantMessage = self.buildRequestAssistantMessage(message);
+                ChatRequestMessage assistantMessage = self.buildRequestAssistantMessage(message);
                 chatCompletionRequestMessages.push(assistantMessage);
             } else if message is ai:ChatUserMessage {
-                chatCompletionRequestMessages.push({
-                    role: ai:USER,
-                    content: check getChatMessageStringContent(message.content),
-                    name: message.name
-                });
+                chatCompletionRequestMessages.push({role: ai:USER, content: check getChatMessageStringContent(message.content)});
             } else if message is ai:ChatSystemMessage {
-                chatCompletionRequestMessages.push({
-                    role: ai:SYSTEM,
-                    content: check getChatMessageStringContent(message.content),
-                    name: message.name
-                });
-            } else if message is ai:ChatFunctionMessage|ai:ChatAssistantMessage {
-                chatCompletionRequestMessages.push(message);
+                chatCompletionRequestMessages.push({role: ai:SYSTEM, content: check getChatMessageStringContent(message.content)});
+            } else if message is ai:ChatFunctionMessage {
+                chatCompletionRequestMessages.push({role: message.role, content: message.content, name: message.name});
             }
         }
         return chatCompletionRequestMessages;
     }
 
     private isolated function buildRequestAssistantMessage(ai:ChatAssistantMessage message)
-    returns chat:ChatCompletionRequestAssistantMessage {
-        chat:ChatCompletionRequestAssistantMessage assistantMessage = {role: ai:ASSISTANT};
+    returns ChatRequestMessage {
+        ChatRequestMessage assistantMessage = {role: ai:ASSISTANT};
         ai:FunctionCall[]? toolCalls = message.toolCalls;
         if toolCalls is ai:FunctionCall[] {
             ai:FunctionCall functionCall = toolCalls[0];
@@ -232,13 +206,13 @@ public isolated distinct client class ModelProvider {
         return assistantMessage;
     }
 
-    private isolated function convertResponseToAssistantMessage(chat:ChatCompletionResponseMessage? message)
+    private isolated function convertResponseToAssistantMessage(ChatResponseMessage? message)
     returns ai:ChatAssistantMessage|ai:LlmError {
         do {
             ai:ChatAssistantMessage chatAssistantMessage = {role: ai:ASSISTANT};
             chatAssistantMessage.content = message?.content;
-            chat:ChatCompletionRequestAssistantMessage_function_call? functionCall = message?.function_call;
-            if functionCall is chat:ChatCompletionRequestAssistantMessage_function_call {
+            ChatFunctionCall? functionCall = message?.function_call;
+            if functionCall is ChatFunctionCall {
                 json arguments = check functionCall.arguments.fromJsonString();
                 chatAssistantMessage.toolCalls = [
                     {
@@ -246,6 +220,17 @@ public isolated distinct client class ModelProvider {
                         arguments: check arguments.cloneWithType()
                     }
                 ];
+            } else {
+                ChatToolCall[]? toolCalls = message?.tool_calls;
+                if toolCalls is ChatToolCall[] && toolCalls.length() > 0 {
+                    json arguments = check toolCalls[0].'function.arguments.fromJsonString();
+                    chatAssistantMessage.toolCalls = [
+                        {
+                            name: toolCalls[0].'function.name,
+                            arguments: check arguments.cloneWithType()
+                        }
+                    ];
+                }
             }
             return chatAssistantMessage;
         } on fail error e {
