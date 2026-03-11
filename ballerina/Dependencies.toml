@@ -393,7 +393,7 @@ dependencies = [
 [[package]]
 org = "sumudunissanka"
 name = "ai.openrouter"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
 	{org = "ballerina", name = "ai"},
 	{org = "ballerina", name = "constraint"},

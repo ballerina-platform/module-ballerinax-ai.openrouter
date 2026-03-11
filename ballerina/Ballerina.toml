@@ -6,7 +6,6 @@ license = ["Apache-2.0"]
 name = "ai.openrouter"
 org = "ballerinax"
 repository = "https://github.com/ballerina-platform/module-ballerinax-ai.openrouter"
-icon="icon.png"
 version = "1.0.0"
 
 [platform.java21]
