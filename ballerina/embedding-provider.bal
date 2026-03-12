@@ -16,18 +16,16 @@
 
 import ballerina/ai;
 import ballerina/ai.observe;
-import ballerina/http;
-
-const DEFAULT_EMBEDDINGS_PATH = "/embeddings";
+import ballerinax/openrouter;
 
 # EmbeddingProvider is a client class that provides an interface for generating
 # vector embeddings via the OpenRouter unified API, which supports embedding models
 # from OpenAI, Google, Mistral, and other providers.
 public isolated distinct client class EmbeddingProvider {
     *ai:EmbeddingProvider;
-    private final http:Client openrouterClient;
+    private final openrouter:Client openrouterClient;
     private final string modelType;
-    private final map<string|string[]> & readonly requestHeaders;
+    private final openrouter:CreateEmbeddingsHeaders & readonly requestHeaders;
 
     # Initializes the OpenRouter embedding provider with the given configuration.
     #
@@ -35,7 +33,7 @@ public isolated distinct client class EmbeddingProvider {
     # + modelType - The embedding model to use (e.g., `openai/text-embedding-3-small`)
     # + serviceUrl - The base URL of the OpenRouter API endpoint
     # + siteUrl - Optional site URL sent as `HTTP-Referer` header for OpenRouter attribution
-    # + siteName - Optional site name sent as `X-Title` header for OpenRouter attribution
+    # + siteName - Optional site name sent as `X-OpenRouter-Title` header for OpenRouter attribution
     # + connectionConfig - Additional HTTP connection configuration
     # + return - `()` on successful initialization; otherwise, returns an `ai:Error`
     public isolated function init(@display {label: "API Key"} string apiKey,
@@ -44,19 +42,19 @@ public isolated distinct client class EmbeddingProvider {
             @display {label: "Site URL"} string? siteUrl = (),
             @display {label: "Site Name"} string? siteName = (),
             @display {label: "Connection Configuration"} *ConnectionConfig connectionConfig) returns ai:Error? {
-        http:Client|ai:Error openrouterClient = buildHttpClient(apiKey, serviceUrl, connectionConfig);
+        openrouter:Client|ai:Error openrouterClient = buildOpenRouterClient(apiKey, serviceUrl, connectionConfig);
         if openrouterClient is ai:Error {
             return openrouterClient;
         }
         self.openrouterClient = openrouterClient;
         self.modelType = modelType;
 
-        map<string|string[]> headers = {};
+        openrouter:CreateEmbeddingsHeaders headers = {};
         if siteUrl is string {
             headers["HTTP-Referer"] = siteUrl;
         }
         if siteName is string {
-            headers["X-Title"] = siteName;
+            headers["X-OpenRouter-Title"] = siteName;
         }
         self.requestHeaders = headers.cloneReadOnly();
     }
@@ -81,9 +79,9 @@ public isolated distinct client class EmbeddingProvider {
         string content = chunk.content;
         span.addInputContent(content);
 
-        EmbeddingRequest request = {input: content, model: self.modelType};
-        EmbeddingResponse|error response = self.openrouterClient->post(
-            DEFAULT_EMBEDDINGS_PATH, request, self.requestHeaders);
+        openrouter:CreateEmbeddingsRequest request = {input: content, model: self.modelType};
+        openrouter:CreateEmbeddingsResponse|error response = self.openrouterClient->/embeddings.post(
+            request, self.requestHeaders);
         if response is error {
             ai:Error err = error ai:LlmConnectionError("Error while connecting to the embedding model", response);
             span.close(err);
@@ -91,20 +89,29 @@ public isolated distinct client class EmbeddingProvider {
         }
 
         span.addResponseModel(response.model);
-        int? inputTokens = response?.usage?.prompt_tokens;
-        if inputTokens is int {
-            span.addInputTokenCount(inputTokens);
+        decimal? inputTokens = response?.usage?.prompt_tokens;
+        if inputTokens is decimal {
+            span.addInputTokenCount(<int>inputTokens);
         }
 
-        EmbeddingDataItem[] data = response.data;
-        if data.length() != 1 || data[0].index != 0 {
-            ai:Error err = error ai:LlmInvalidResponseError("Invalid embedding response: expected exactly one embedding with index 0");
+        var data = response.data;
+        if data.length() != 1 {
+            ai:Error err = error ai:LlmInvalidResponseError(
+                "Invalid embedding response: expected exactly one embedding with index 0");
+            span.close(err);
+            return err;
+        }
+
+        decimal[]|string embeddingRaw = data[0].embedding;
+        if embeddingRaw !is decimal[] {
+            ai:Error err = error ai:LlmInvalidResponseError(
+                "Unsupported embedding format: base64 encoding is not supported, use float encoding.");
             span.close(err);
             return err;
         }
 
         span.close();
-        return data[0].embedding;
+        return decimalToFloatArray(embeddingRaw);
     }
 
     # Converts a batch of chunks into vector embeddings.
@@ -130,9 +137,9 @@ public isolated distinct client class EmbeddingProvider {
         string[] input = chunks.map(chunk => <string>chunk.content);
         span.addInputContent(input);
 
-        EmbeddingRequest request = {input, model: self.modelType};
-        EmbeddingResponse|error response = self.openrouterClient->post(
-            DEFAULT_EMBEDDINGS_PATH, request, self.requestHeaders);
+        openrouter:CreateEmbeddingsRequest request = {input, model: self.modelType};
+        openrouter:CreateEmbeddingsResponse|error response = self.openrouterClient->/embeddings.post(
+            request, self.requestHeaders);
         if response is error {
             ai:Error err = error ai:LlmConnectionError("Error while connecting to the embedding model", response);
             span.close(err);
@@ -140,12 +147,12 @@ public isolated distinct client class EmbeddingProvider {
         }
 
         span.addResponseModel(response.model);
-        int? inputTokens = response?.usage?.prompt_tokens;
-        if inputTokens is int {
-            span.addInputTokenCount(inputTokens);
+        decimal? inputTokens = response?.usage?.prompt_tokens;
+        if inputTokens is decimal {
+            span.addInputTokenCount(<int>inputTokens);
         }
 
-        EmbeddingDataItem[] data = response.data;
+        var data = response.data;
         if data.length() == 0 {
             ai:Error err = error ai:LlmInvalidResponseError("No embeddings returned from the model");
             span.close(err);
@@ -157,16 +164,38 @@ public isolated distinct client class EmbeddingProvider {
             span.close(err);
             return err;
         }
-        int[] indices = from EmbeddingDataItem item in data select item.index;
-        int[] expectedIndices = from int i in 0 ..< chunks.length() select i;
-        if indices.sort("ascending") != expectedIndices {
-            ai:Error err = error ai:LlmInvalidResponseError("Invalid embedding response: indices do not form a complete 0..n-1 sequence");
-            span.close(err);
-            return err;
+
+        // Build an index-keyed map then collect in order (avoids sorting on decimal?)
+        map<ai:Embedding> indexedEmbeddings = {};
+        foreach var item in data {
+            decimal? idx = item.index;
+            if idx is () {
+                ai:Error err = error ai:LlmInvalidResponseError(
+                    "Invalid embedding response: item is missing an index");
+                span.close(err);
+                return err;
+            }
+            decimal[]|string embeddingRaw = item.embedding;
+            if embeddingRaw !is decimal[] {
+                ai:Error err = error ai:LlmInvalidResponseError(
+                    "Unsupported embedding format: base64 encoding is not supported, use float encoding.");
+                span.close(err);
+                return err;
+            }
+            indexedEmbeddings[(<int>idx).toString()] = decimalToFloatArray(embeddingRaw);
+        }
+        ai:Embedding[] embeddings = [];
+        foreach int i in 0 ..< data.length() {
+            ai:Embedding? emb = indexedEmbeddings[i.toString()];
+            if emb is () {
+                ai:Error err = error ai:LlmInvalidResponseError(
+                    "Invalid embedding response: indices do not form a complete 0..n-1 sequence");
+                span.close(err);
+                return err;
+            }
+            embeddings.push(emb);
         }
 
-        EmbeddingDataItem[] sorted = data.sort("ascending", item => item.index);
-        ai:Embedding[] embeddings = from EmbeddingDataItem item in sorted select item.embedding;
         span.close();
         return embeddings;
     }
@@ -176,3 +205,7 @@ public isolated distinct client class EmbeddingProvider {
 isolated function isAllSupportedChunks(ai:Chunk[] chunks) returns boolean {
     return chunks.every(chunk => chunk is ai:TextChunk|ai:TextDocument);
 }
+
+// Converts a decimal[] returned by the connector to float[] required by ai:Embedding.
+isolated function decimalToFloatArray(decimal[] values) returns float[] =>
+    values.map(v => <float>v);

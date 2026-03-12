@@ -17,6 +17,22 @@
 import ballerina/http;
 import ballerina/test;
 
+// Local types used only for deserialising generate() request payloads in the mock service.
+type TextContentPart record {
+    string text;
+};
+
+type ToolFunction record {
+    string name;
+    string description?;
+    map<json> parameters?;
+};
+
+type Tool record {
+    string 'type;
+    ToolFunction 'function;
+};
+
 // ── Chat mock service (port 8081) ────────────────────────────────────────────
 // Used by chat() tests. Routes by first user message content.
 // Returns either a legacy `function_call` response, a modern `tool_calls`
@@ -47,7 +63,7 @@ service /llm on new http:Listener(8081) {
                         }
                     }
                 }],
-                "usage": {"prompt_tokens": 20, "completion_tokens": 10}
+                "usage": {"prompt_tokens": 20, "completion_tokens": 10, "total_tokens": 30}
             };
         }
 
@@ -74,7 +90,7 @@ service /llm on new http:Listener(8081) {
                         }]
                     }
                 }],
-                "usage": {"prompt_tokens": 20, "completion_tokens": 10}
+                "usage": {"prompt_tokens": 20, "completion_tokens": 10, "total_tokens": 30}
             };
         }
 
@@ -93,7 +109,7 @@ service /llm on new http:Listener(8081) {
                         "content": "Hello! How can I help you today?"
                     }
                 }],
-                "usage": {"prompt_tokens": 5, "completion_tokens": 10}
+                "usage": {"prompt_tokens": 5, "completion_tokens": 10, "total_tokens": 15}
             };
         }
 
@@ -112,7 +128,7 @@ service /llm on new http:Listener(8081) {
                         "content": "Here is the summary..."
                     }
                 }],
-                "usage": {"prompt_tokens": 10, "completion_tokens": 15}
+                "usage": {"prompt_tokens": 10, "completion_tokens": 15, "total_tokens": 25}
             };
         }
 

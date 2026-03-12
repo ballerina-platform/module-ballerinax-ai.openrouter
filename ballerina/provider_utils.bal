@@ -19,13 +19,14 @@ import ballerina/ai.observe;
 import ballerina/constraint;
 import ballerina/http;
 import ballerina/lang.array;
+import ballerinax/openrouter;
 
 type ResponseSchema record {|
     map<json> schema;
     boolean isOriginallyJsonObject = true;
 |};
 
-type DocumentContentPart TextContentPart|ImageContentPart;
+type DocumentContentPart openrouter:ChatMessageContentItemText|openrouter:ChatMessageContentItemImage;
 
 const JSON_CONVERSION_ERROR = "FromJsonStringError";
 const CONVERSION_ERROR = "ConversionError";
@@ -83,14 +84,14 @@ isolated function getExpectedResponseSchema(typedesc<anydata> expectedResponseTy
     return generateJsonObjectSchema(check generateJsonSchemaForTypedescAsJson(td));
 }
 
-isolated function getGetResultsToolChoice() returns NamedToolChoice => {
+isolated function getGetResultsToolChoice() returns openrouter:NamedToolChoice => {
     'type: FUNCTION,
     'function: {
         name: GET_RESULTS_TOOL
     }
 };
 
-isolated function getGetResultsTool(map<json> parameters) returns Tool[]|ai:Error {
+isolated function getGetResultsTool(map<json> parameters) returns openrouter:ToolDefinitionJson[]|ai:Error {
     return [
         {
             'type: FUNCTION,
@@ -148,28 +149,25 @@ isolated function addDocumentContentPart(ai:Document doc, DocumentContentPart[] 
     return error ai:Error("Only text and image documents are supported.");
 }
 
-isolated function addTextContentPart(TextContentPart? contentPart, DocumentContentPart[] contentParts) {
-    if contentPart is TextContentPart {
+isolated function addTextContentPart(openrouter:ChatMessageContentItemText? contentPart, DocumentContentPart[] contentParts) {
+    if contentPart is openrouter:ChatMessageContentItemText {
         return contentParts.push(contentPart);
     }
 }
 
-isolated function buildTextContentPart(string content) returns TextContentPart? {
+isolated function buildTextContentPart(string content) returns openrouter:ChatMessageContentItemText? {
     if content.length() == 0 {
         return;
     }
-
-    return {
-        'type: "text",
-        text: content
-    };
+    return {'type: "text", text: content};
 }
 
-isolated function buildImageContentPart(ai:ImageDocument doc) returns ImageContentPart|ai:Error =>
+isolated function buildImageContentPart(ai:ImageDocument doc) returns openrouter:ChatMessageContentItemImage|ai:Error =>
     {
     'type: "image_url",
     image_url: {
-        url: check buildImageUrl(doc.content, doc.metadata?.mimeType)
+        url: check buildImageUrl(doc.content, doc.metadata?.mimeType),
+        detail: "auto"
     }
 };
 
@@ -202,15 +200,15 @@ isolated function handleParseResponseError(error chatResponseError) returns erro
     return chatResponseError;
 }
 
-isolated function generateLlmResponse(http:Client httpClient, string modelType,
+isolated function generateLlmResponse(openrouter:Client httpClient, string modelType,
         ai:Prompt prompt, typedesc<json> expectedResponseTypedesc,
-        map<string|string[]> requestHeaders) returns anydata|ai:Error {
+        openrouter:SendChatCompletionRequestHeaders requestHeaders) returns anydata|ai:Error {
     observe:GenerateContentSpan span = observe:createGenerateContentSpan(modelType);
     span.addProvider("openrouter");
 
     DocumentContentPart[] content;
     ResponseSchema responseSchema;
-    Tool[] tools;
+    openrouter:ToolDefinitionJson[] tools;
     do {
         content = check generateChatCreationContent(prompt);
         responseSchema = check getExpectedResponseSchema(expectedResponseTypedesc);
@@ -220,10 +218,10 @@ isolated function generateLlmResponse(http:Client httpClient, string modelType,
         return err;
     }
 
-    GenerateRequest request = {
+    openrouter:ChatGenerationParams request = {
         messages: [
-            {
-                role: ai:USER,
+            <openrouter:UserMessage>{
+                role: "user",
                 content
             }
         ],
@@ -233,43 +231,39 @@ isolated function generateLlmResponse(http:Client httpClient, string modelType,
     };
     span.addInputMessages(request.messages.toJson());
 
-    ChatCompletionResponse|error response = httpClient->post(
-        DEFAULT_CHAT_COMPLETION_PATH, request, requestHeaders);
+    openrouter:ChatResponse|error response = httpClient->/chat/completions.post(request, requestHeaders);
     if response is error {
         ai:Error err = buildHttpError(response);
         span.close(err);
         return err;
     }
 
-    string? responseId = response.id;
-    if responseId is string {
-        span.addResponseId(responseId);
+    span.addResponseId(response.id);
+    decimal? inputTokens = response.usage?.prompt_tokens;
+    if inputTokens is decimal {
+        span.addInputTokenCount(<int>inputTokens);
     }
-    int? inputTokens = response.usage?.prompt_tokens;
-    if inputTokens is int {
-        span.addInputTokenCount(inputTokens);
-    }
-    int? outputTokens = response.usage?.completion_tokens;
-    if outputTokens is int {
-        span.addOutputTokenCount(outputTokens);
+    decimal? outputTokens = response.usage?.completion_tokens;
+    if outputTokens is decimal {
+        span.addOutputTokenCount(<int>outputTokens);
     }
 
-    ChatCompletionChoice[] choices = response.choices;
+    openrouter:ChatResponseChoice[] choices = response.choices;
     if choices.length() == 0 {
         ai:Error err = error("No completion choices");
         span.close(err);
         return err;
     }
 
-    ChatResponseMessage? message = choices[0].message;
-    ChatToolCall[]? toolCalls = message?.tool_calls;
+    openrouter:AssistantMessage message = choices[0].message;
+    openrouter:ChatMessageToolCall[]? toolCalls = message?.tool_calls;
     if toolCalls is () || toolCalls.length() == 0 {
         ai:Error err = error ai:LlmInvalidResponseError(NO_RELEVANT_RESPONSE_FROM_THE_LLM);
         span.close(err);
         return err;
     }
 
-    ChatToolCall tool = toolCalls[0];
+    openrouter:ChatMessageToolCall tool = toolCalls[0];
     map<json>|error arguments = tool.'function.arguments.fromJsonStringWithType();
     if arguments is error {
         ai:Error err = error ai:LlmInvalidResponseError(NO_RELEVANT_RESPONSE_FROM_THE_LLM);
@@ -353,36 +347,31 @@ isolated function buildHttpError(error httpError) returns ai:LlmConnectionError 
         string `Failed to connect to OpenRouter: ${httpError.message()}`, httpError);
 }
 
-isolated function buildHttpClient(string apiKey, string serviceUrl,
-        ConnectionConfig connectionConfig) returns http:Client|ai:Error {
-    http:ClientHttp1Settings http1Settings = connectionConfig.http1Settings ?: {};
-    http:ClientHttp2Settings http2Settings = connectionConfig.http2Settings ?: {};
-    http:CacheConfig cache = connectionConfig.cache ?: {};
-    http:ResponseLimitConfigs responseLimits = connectionConfig.responseLimits ?: {};
-
-    http:ClientConfiguration httpConfig = {
+isolated function buildOpenRouterClient(string apiKey, string serviceUrl,
+        ConnectionConfig connectionConfig) returns openrouter:Client|ai:Error {
+    openrouter:ConnectionConfig connConfig = {
         auth: {token: apiKey},
         httpVersion: connectionConfig.httpVersion,
-        http1Settings: http1Settings,
-        http2Settings: http2Settings,
+        http1Settings: connectionConfig.http1Settings ?: {},
+        http2Settings: connectionConfig.http2Settings ?: {},
         timeout: connectionConfig.timeout,
         forwarded: connectionConfig.forwarded,
         poolConfig: connectionConfig.poolConfig,
-        cache: cache,
+        cache: connectionConfig.cache ?: {},
         compression: connectionConfig.compression,
         circuitBreaker: connectionConfig.circuitBreaker,
         retryConfig: connectionConfig.retryConfig,
-        responseLimits: responseLimits,
+        responseLimits: connectionConfig.responseLimits ?: {},
         secureSocket: connectionConfig.secureSocket,
         proxy: connectionConfig.proxy,
         validation: connectionConfig.validation
     };
 
-    http:Client|error httpClient = new (serviceUrl, httpConfig);
-    if httpClient is error {
-        return error ai:Error("Failed to initialize HTTP client", httpClient);
+    openrouter:Client|error 'client = new openrouter:Client(connConfig, serviceUrl);
+    if 'client is error {
+        return error ai:Error("Failed to initialize HTTP client", 'client);
     }
-    return httpClient;
+    return 'client;
 }
 
 isolated function convertMessageToJson(ai:ChatMessage[]|ai:ChatMessage messages) returns json|ai:Error {
