@@ -1,0 +1,19 @@
+[package]
+authors = ["Ballerina"]
+distribution = "2201.12.6"
+keywords = ["Agent", "Model", "Provider", "Vendor/OpenRouter", "Area/AI", "Type/Connector"]
+license = ["Apache-2.0"]
+name = "ai.openrouter"
+org = "ballerinax"
+repository = "https://github.com/ballerina-platform/module-ballerinax-ai.openrouter"
+version = "@toml.version@"
+icon="icon.png"
+
+[platform.java21]
+graalvmCompatible = true
+
+[[platform.java21.dependency]]
+groupId = "io.ballerina.lib"
+artifactId = "ai.openrouter-native"
+version = "@toml.version@"
+path = "../native/build/libs/ai.openrouter-native-@project.version@.jar"

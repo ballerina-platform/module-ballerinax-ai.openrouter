@@ -1,0 +1,9 @@
+[plugin]
+id = "ai-openrouter-compiler-plugin"
+class = "io.ballerina.lib.ai.openrouter.compiler.AiOpenRouterCompilerPlugin"
+
+[[dependency]]
+path = "../compiler-plugin/build/libs/ai.openrouter-compiler-plugin-@project.version@.jar"
+
+[[dependency]]
+path = "../compiler-plugin/build/libs/ballerina-to-openapi-@ballerinaToOpenApiVersion.version@.jar"
