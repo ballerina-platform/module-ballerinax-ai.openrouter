@@ -21,7 +21,6 @@ import ballerinax/openrouter;
 
 const DEFAULT_OPENROUTER_SERVICE_URL = "https://openrouter.ai/api/v1";
 const DEFAULT_MAX_TOKEN_COUNT = 512;
-const DEFAULT_TEMPERATURE = 0.7d;
 
 # ModelProvider is a client class that provides an interface for interacting with
 # LLMs via the OpenRouter unified API, which supports models from OpenAI, Anthropic,
@@ -30,7 +29,7 @@ public isolated distinct client class ModelProvider {
     *ai:ModelProvider;
     private final openrouter:Client openrouterClient;
     private final string modelType;
-    private final decimal temperature;
+    private final decimal? temperature;
     private final int maxTokens;
     private final openrouter:SendChatCompletionRequestHeaders & readonly requestHeaders;
 
@@ -51,7 +50,7 @@ public isolated distinct client class ModelProvider {
             @display {label: "Site URL"} string? siteUrl = (),
             @display {label: "Site Name"} string? siteName = (),
             @display {label: "Maximum Tokens"} int maxTokens = DEFAULT_MAX_TOKEN_COUNT,
-            @display {label: "Temperature"} decimal temperature = DEFAULT_TEMPERATURE,
+            @display {label: "Temperature"} decimal? temperature = (),
             @display {label: "Connection Configuration"} *ConnectionConfig connectionConfig) returns ai:Error? {
         openrouter:Client|ai:Error openrouterClient = buildOpenRouterClient(apiKey, serviceUrl, connectionConfig);
         if openrouterClient is ai:Error {
@@ -86,7 +85,10 @@ public isolated distinct client class ModelProvider {
         if stop is string {
             span.addStopSequence(stop);
         }
-        span.addTemperature(self.temperature);
+        decimal? temperature = self.temperature;
+        if temperature is decimal {
+            span.addTemperature(temperature);
+        }
         json|ai:Error inputMessage = convertMessageToJson(messages);
         if inputMessage is json {
             span.addInputMessages(inputMessage);
@@ -94,11 +96,13 @@ public isolated distinct client class ModelProvider {
 
         openrouter:ChatGenerationParams request = {
             max_completion_tokens: <decimal>self.maxTokens,
-            temperature: self.temperature,
             stop,
             model: self.modelType,
             messages: check self.prepareCompletionRequestMessages(messages, tools)
         };
+        if temperature is decimal {
+            request.temperature = temperature;
+        }
         if tools.length() > 0 {
             request.tools = tools.map(t => <openrouter:ToolDefinitionJson>{
                 'type: "function",
