@@ -21,6 +21,9 @@ import ballerinax/openrouter;
 # EmbeddingProvider is a client class that provides an interface for generating
 # vector embeddings via the OpenRouter unified API, which supports embedding models
 # from OpenAI, Google, Mistral, and other providers.
+@display {
+    label: "OpenRouter Embedding Provider"
+}
 public isolated distinct client class EmbeddingProvider {
     *ai:EmbeddingProvider;
     private final openrouter:Client openrouterClient;
