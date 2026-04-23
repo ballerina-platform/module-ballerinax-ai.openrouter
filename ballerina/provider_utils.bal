@@ -104,8 +104,7 @@ isolated function getGetResultsTool(map<json> parameters) returns openrouter:Too
     ];
 }
 
-isolated function generateChatCreationContent(ai:Prompt prompt)
-                        returns DocumentContentPart[]|ai:Error {
+isolated function generateChatCreationContent(ai:Prompt prompt) returns DocumentContentPart[]|ai:Error {
     string[] & readonly strings = prompt.strings;
     anydata[] insertions = prompt.insertions;
     DocumentContentPart[] contentParts = [];
@@ -119,14 +118,14 @@ isolated function generateChatCreationContent(ai:Prompt prompt)
         anydata insertion = insertions[i];
         string str = strings[i + 1];
 
-        if insertion is ai:Document {
+        if insertion is ai:Document|ai:Chunk {
             addTextContentPart(buildTextContentPart(accumulatedTextContent), contentParts);
             accumulatedTextContent = "";
             check addDocumentContentPart(insertion, contentParts);
-        } else if insertion is ai:Document[] {
+        } else if insertion is (ai:Document|ai:Chunk)[] {
             addTextContentPart(buildTextContentPart(accumulatedTextContent), contentParts);
             accumulatedTextContent = "";
-            foreach ai:Document doc in insertion {
+            foreach ai:Document|ai:Chunk doc in insertion {
                 check addDocumentContentPart(doc, contentParts);
             }
         } else {
@@ -139,14 +138,13 @@ isolated function generateChatCreationContent(ai:Prompt prompt)
     return contentParts;
 }
 
-isolated function addDocumentContentPart(ai:Document doc, DocumentContentPart[] contentParts) returns ai:Error? {
-    if doc is ai:TextDocument {
+isolated function addDocumentContentPart(ai:Document|ai:Chunk doc, DocumentContentPart[] contentParts) returns ai:Error? {
+    if doc is ai:TextDocument|ai:TextChunk {
         return addTextContentPart(buildTextContentPart(doc.content), contentParts);
     } else if doc is ai:ImageDocument {
         return contentParts.push(check buildImageContentPart(doc));
     }
-
-    return error ai:Error("Only text and image documents are supported.");
+    return error("Only text and image documents are supported.");
 }
 
 isolated function addTextContentPart(openrouter:ChatMessageContentItemText? contentPart, DocumentContentPart[] contentParts) {
