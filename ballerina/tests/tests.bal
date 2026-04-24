@@ -153,6 +153,32 @@ function testGenerateMethodWithImageDocumentsandTextDocuments() returns ai:Error
 }
 
 @test:Config
+function testGenerateMethodWithTextChunk() returns ai:Error? {
+    ai:TextChunk chunk = {'type: "text-chunk", content: string `Title: ${blog1.title} Content: ${blog1.content}`};
+
+    int|error rating = provider->generate(`Rate this text chunk out of 10. ${chunk}.`);
+    test:assertEquals(rating, 4);
+}
+
+@test:Config
+function testGenerateMethodWithTextChunkArray() returns ai:Error? {
+    ai:TextChunk chunk1 = {'type: "text-chunk", content: string `Title: ${blog1.title} Content: ${blog1.content}`};
+    ai:TextChunk chunk2 = {'type: "text-chunk", content: string `Title: ${blog1.title} Content: ${blog1.content}`};
+
+    int[]|error ratings = provider->generate(`Rate these text chunks out of 10. ${<ai:Chunk[]>[chunk1, chunk2]}. Thank you!`);
+    test:assertEquals(ratings, [9, 1]);
+}
+
+@test:Config
+function testGenerateMethodWithMixedDocumentAndChunkArray() returns ai:Error? {
+    ai:TextDocument doc = {content: string `Title: ${blog1.title} Content: ${blog1.content}`};
+    ai:TextChunk chunk = {'type: "text-chunk", content: string `Title: ${blog1.title} Content: ${blog1.content}`};
+
+    int[]|error ratings = provider->generate(`Rate these mixed documents out of 10. ${<(ai:Document|ai:Chunk)[]>[doc, chunk]}. Thank you!`);
+    test:assertEquals(ratings, [9, 1]);
+}
+
+@test:Config
 function testGenerateMethodWithAudioDocument() returns ai:Error? {
     ai:AudioDocument aud = {
         content: sampleBinaryData,
