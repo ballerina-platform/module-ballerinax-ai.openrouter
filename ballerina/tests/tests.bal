@@ -63,94 +63,6 @@ function testGenerateMethodWithTextDocument() returns ai:Error? {
     test:assertEquals(rating, 4);
 }
 
-@test:Config
-function testGenerateMethodWithImageDocumentWithBinaryData() returns ai:Error? {
-    ai:ImageDocument img = {
-        content: sampleBinaryData
-    };
-
-    string|error description = provider->generate(`Describe the following image. ${img}.`);
-    test:assertEquals(description, "This is a sample image description.");
-}
-
-@test:Config
-function testGenerateMethodWithImageDocumentWithUrl() returns ai:Error? {
-    ai:ImageDocument img = {
-        content: "https://example.com/image.jpg",
-        metadata: {
-            mimeType: "image/jpg"
-        }
-    };
-
-    string|error description = provider->generate(`Describe the image. ${img}.`);
-    test:assertEquals(description, "This is a sample image description.");
-}
-
-@test:Config
-function testGenerateMethodWithImageDocumentWithInvalidUrl() returns ai:Error? {
-    ai:ImageDocument img = {
-        content: "This-is-not-a-valid-url"
-    };
-
-    string|ai:Error description = provider->generate(`Please describe the image. ${img}.`);
-    test:assertTrue(description is ai:Error);
-
-    string actualErrorMessage = (<ai:Error>description).message();
-    string expectedErrorMessage = "Must be a valid URL";
-    test:assertTrue((<ai:Error>description).message().includes("Must be a valid URL"),
-            string `expected '${expectedErrorMessage}', found ${actualErrorMessage}`);
-}
-
-@test:Config
-function testGenerateMethodWithImageDocumentArray() returns ai:Error? {
-    ai:ImageDocument img = {
-        content: sampleBinaryData,
-        metadata: {
-            mimeType: "image/png"
-        }
-    };
-    ai:ImageDocument img2 = {
-        content: "https://example.com/image.jpg"
-    };
-
-    string[]|error descriptions = provider->generate(
-        `Describe the following ${"2"} images. ${<ai:ImageDocument[]>[img, img2]}.`);
-    test:assertEquals(descriptions, ["This is a sample image description.", "This is a sample image description."]);
-}
-
-@test:Config
-function testGenerateMethodWithTextAndImageDocumentArray() returns ai:Error? {
-    ai:ImageDocument img = {
-        content: sampleBinaryData,
-        metadata: {
-            mimeType: "image/png"
-        }
-    };
-    ai:TextDocument blog = {
-        content: string `Title: ${blog1.title} Content: ${blog1.content}`
-    };
-
-    string[]|error descriptions = provider->generate(
-        `Please describe the following image and the doc. ${<ai:Document[]>[img, blog]}.`);
-    test:assertEquals(descriptions, ["This is a sample image description.", "This is a sample doc description."]);
-}
-
-@test:Config
-function testGenerateMethodWithImageDocumentsandTextDocuments() returns ai:Error? {
-    ai:ImageDocument img = {
-        content: sampleBinaryData,
-        metadata: {
-            mimeType: "image/png"
-        }
-    };
-    ai:TextDocument blog = {
-        content: string `Title: ${blog1.title} Content: ${blog1.content}`
-    };
-
-    string[]|error descriptions = provider->generate(
-        `${"Describe"} the following ${"text"} ${"document"} and image document. ${img}${blog}`);
-    test:assertEquals(descriptions, ["This is a sample image description.", "This is a sample doc description."]);
-}
 
 @test:Config
 function testGenerateMethodWithTextChunk() returns ai:Error? {
@@ -171,7 +83,7 @@ function testGenerateMethodWithAudioDocument() returns ai:Error? {
 
     string[]|error descriptions = provider->generate(`What is the content in this document. ${aud}.`);
     test:assertTrue(descriptions is error);
-    test:assertTrue((<error>descriptions).message().includes("Only text and image documents are supported."));
+    test:assertTrue((<error>descriptions).message().includes("Only text documents are supported."));
 }
 
 @test:Config
@@ -182,7 +94,7 @@ function testGenerateMethodWithUnsupportedDocument() returns ai:Error? {
 
     string[]|error descriptions = provider->generate(`What is the content in this document. ${doc}.`);
     test:assertTrue(descriptions is error);
-    test:assertTrue((<error>descriptions).message().includes("Only text and image documents are supported."));
+    test:assertTrue((<error>descriptions).message().includes("Only text documents are supported."));
 }
 
 @test:Config
