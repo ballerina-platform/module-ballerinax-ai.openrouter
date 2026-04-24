@@ -144,7 +144,7 @@ isolated function addDocumentContentPart(ai:Document|ai:Chunk doc, DocumentConte
     } else if doc is ai:ImageDocument {
         return contentParts.push(check buildImageContentPart(doc));
     }
-    return error("Only text and image documents are supported.");
+    return error ai:Error("Only text and image documents are supported.");
 }
 
 isolated function addTextContentPart(openrouter:ChatMessageContentItemText? contentPart, DocumentContentPart[] contentParts) {
