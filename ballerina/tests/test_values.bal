@@ -233,7 +233,7 @@ const expectedParamterSchemaStringForCountry =
     {"type": "object", "properties": {"result": {"type": "string"}}};
 
 final readonly & map<anydata>[] expectedContentPartsForTextChunk = [
-    {"type": "text", "text": "Rate this text chunk out of 10. "},
+    {"type": "text", "text": "How would you rate this text chunk content out of 10. "},
     {
         "type": "text",
         "text": "Title: Tips for Growing a Beautiful Garden Content: " +
@@ -242,4 +242,23 @@ final readonly & map<anydata>[] expectedContentPartsForTextChunk = [
         "and remember to water them regularly.\n        Don't forget to mulch to retain moisture and prevent weeds."
     },
     {"type": "text", "text": "."}
+];
+
+final readonly & map<anydata>[] expectedContentPartsForTextChunkArray = [
+    {"type": "text", "text": "How would you rate these text chunks out of 10. "},
+    {
+        "type": "text",
+        "text": "Title: Tips for Growing a Beautiful Garden Content: " +
+        "Spring is the perfect time to start your garden.\n        Begin by preparing your soil with " +
+        "organic compost and ensure proper drainage.\n        Choose plants suitable for your climate zone, " +
+        "and remember to water them regularly.\n        Don't forget to mulch to retain moisture and prevent weeds."
+    },
+    {
+        "type": "text",
+        "text": "Title: Tips for Growing a Beautiful Garden Content: " +
+        "Spring is the perfect time to start your garden.\n        Begin by preparing your soil with " +
+        "organic compost and ensure proper drainage.\n        Choose plants suitable for your climate zone, " +
+        "and remember to water them regularly.\n        Don't forget to mulch to retain moisture and prevent weeds."
+    },
+    {"type": "text", "text": ". Thank you!"}
 ];
