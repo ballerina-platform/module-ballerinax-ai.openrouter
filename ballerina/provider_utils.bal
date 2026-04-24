@@ -141,8 +141,10 @@ isolated function generateChatCreationContent(ai:Prompt prompt) returns Document
 isolated function addDocumentContentPart(ai:Document|ai:Chunk doc, DocumentContentPart[] contentParts) returns ai:Error? {
     if doc is ai:TextDocument|ai:TextChunk {
         return addTextContentPart(buildTextContentPart(doc.content), contentParts);
-    } 
-    return error("Only text documents are supported.");
+    } else if doc is ai:ImageDocument {
+        return contentParts.push(check buildImageContentPart(doc));
+    }
+    return error("Only text and image documents are supported.");
 }
 
 isolated function addTextContentPart(openrouter:ChatMessageContentItemText? contentPart, DocumentContentPart[] contentParts) {

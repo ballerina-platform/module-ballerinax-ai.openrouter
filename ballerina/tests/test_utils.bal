@@ -56,6 +56,34 @@ isolated function getExpectedParameterSchema(string message) returns map<json> {
         return expectedParamterSchemaStringForCountry;
     }
 
+    if message.startsWith("Describe the following 2 images") {
+        return expectedParameterSchemaStringForRateBlog7;
+    }
+
+    if message.startsWith("Please describe the following image and the doc") {
+        return expectedParameterSchemaStringForRateBlog7;
+    }
+
+    if message.startsWith("Describe the following text document and image document") {
+        return expectedParameterSchemaStringForRateBlog7;
+    }
+
+    if message.startsWith("What is the content in this document") {
+        return expectedParameterSchemaStringForRateBlog7;
+    }
+
+    if message.startsWith("Describe the following image") {
+        return expectedParameterSchemaStringForRateBlog8;
+    }
+
+    if message.startsWith("Describe the image") {
+        return expectedParameterSchemaStringForRateBlog8;
+    }
+
+    if message.startsWith("Please describe the image") {
+        return expectedParameterSchemaStringForRateBlog8;
+    }
+
     if message.startsWith("Give me a random joke") {
         return {"type": "object", "properties": {"result": {"anyOf": [{"type": "string"}, {"type": "null"}]}}};
     }
@@ -106,6 +134,34 @@ isolated function getTheMockLLMResult(string message) returns string {
 
     if message.startsWith("How would you rate this") {
         return "{\"result\": 4}";
+    }
+
+    if message.startsWith("Describe the following 2 images") {
+        return "{\"result\": [\"This is a sample image description.\", \"This is a sample image description.\"]}";
+    }
+
+    if message.startsWith("Please describe the following image and the doc") {
+        return "{\"result\": [\"This is a sample image description.\", \"This is a sample doc description.\"]}";
+    }
+
+    if message.startsWith("Describe the following text document and image document") {
+        return "{\"result\": [\"This is a sample image description.\", \"This is a sample doc description.\"]}";
+    }
+
+    if message.startsWith("What is the content in this document") {
+        return "{\"result\": [\"This is a sample image description.\"]}";
+    }
+
+    if message.startsWith("Describe the following image") {
+        return "{\"result\": \"This is a sample image description.\"}";
+    }
+
+    if message.startsWith("Describe the image") {
+        return "{\"result\": \"This is a sample image description.\"}";
+    }
+
+    if message.startsWith("Please describe the image") {
+        return "{\"result\": \"This is a sample image description.\"}";
     }
 
     if message.startsWith("Give me a random joke") {
@@ -184,6 +240,104 @@ isolated function getExpectedContentParts(string message) returns map<anydata>[]
 
     if message.startsWith("Which country") {
         return expectedContentPartsForCountry;
+    }
+
+    if message.startsWith("Describe the following 2 images") {
+        return [
+            {"type": "text", "text": "Describe the following 2 images. "},
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": string `data:image/png;base64,${sampleBase64Str}`,
+                    "detail": "auto"
+                }
+            },
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": sampleImageUrl,
+                    "detail": "auto"
+                }
+            },
+            {"type": "text", "text": "."}
+        ];
+    }
+
+    if message.startsWith("Please describe the following image and the doc") {
+        return [
+            {"type": "text", "text": "Please describe the following image and the doc. "},
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": string `data:image/png;base64,${sampleBase64Str}`,
+                    "detail": "auto"
+                }
+            },
+            {
+                "type": "text",
+                "text": string `Title: ${blog1.title} Content: ${blog1.content}`
+            },
+            {"type": "text", "text": "."}
+        ];
+    }
+
+    if message.startsWith("Describe the following text document and image document") {
+        return [
+            {"type": "text", "text": "Describe the following text document and image document. "},
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": string `data:image/png;base64,${sampleBase64Str}`,
+                    "detail": "auto"
+                }
+            },
+            {
+                "type": "text",
+                "text": string `Title: ${blog1.title} Content: ${blog1.content}`
+            }
+        ];
+    }
+
+    if message.startsWith("Describe the following image") {
+        return [
+            {"type": "text", "text": "Describe the following image. "},
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": string `data:image/*;base64,${sampleBase64Str}`,
+                    "detail": "auto"
+                }
+            },
+            {"type": "text", "text": "."}
+        ];
+    }
+
+    if message.startsWith("Describe the image") {
+        return [
+            {"type": "text", "text": "Describe the image. "},
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": sampleImageUrl,
+                    "detail": "auto"
+                }
+            },
+            {"type": "text", "text": "."}
+        ];
+    }
+
+    if message.startsWith("Please describe the image") {
+        return [
+            {"type": "text", "text": "Please describe the image. "},
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": "This-is-not-a-valid-url",
+                    "detail": "auto"
+                }
+            },
+            {"type": "text", "text": "."}
+        ];
     }
 
     if message.startsWith("Give me a random joke") {

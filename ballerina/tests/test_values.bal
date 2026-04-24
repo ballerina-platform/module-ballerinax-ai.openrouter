@@ -14,6 +14,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+import ballerina/lang.array;
+
 type Blog record {
     string title;
     string content;
@@ -43,6 +45,8 @@ const blog2 = {
 };
 
 final byte[] sampleBinaryData = [137, 80, 78, 71, 13, 10, 26, 10];
+final string sampleBase64Str = array:toBase64(sampleBinaryData);
+const sampleImageUrl = "https://example.com/image.jpg";
 
 const review = "{\"rating\": 8, \"comment\": \"Talks about essential aspects of sports performance " +
         "including warm-up, form, equipment, and nutrition.\"}";
@@ -208,6 +212,22 @@ const expectedParameterSchemaStringForRateBlog6 =
         }
     }
 };
+
+const expectedParameterSchemaStringForRateBlog7 =
+    {
+    "type": "object",
+    "properties": {
+        "result": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        }
+    }
+};
+
+const expectedParameterSchemaStringForRateBlog8 =
+    {"type": "object", "properties": {"result": {"type": "string"}}};
 
 const expectedParamterSchemaStringForCountry =
     {"type": "object", "properties": {"result": {"type": "string"}}};
