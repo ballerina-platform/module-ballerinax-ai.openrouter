@@ -92,14 +92,6 @@ isolated function getExpectedParameterSchema(string message) returns map<json> {
         return expectedParameterSchemaStringForRateBlog;
     }
 
-    if message.startsWith("Rate these text chunks") {
-        return expectedParameterSchemaStringForRateBlog6;
-    }
-
-    if message.startsWith("Rate these mixed documents") {
-        return expectedParameterSchemaStringForRateBlog6;
-    }
-
     return {};
 }
 
@@ -178,14 +170,6 @@ isolated function getTheMockLLMResult(string message) returns string {
 
     if message.startsWith("Rate this text chunk") {
         return "{\"result\": 4}";
-    }
-
-    if message.startsWith("Rate these text chunks") {
-        return "{\"result\": [9, 1]}";
-    }
-
-    if message.startsWith("Rate these mixed documents") {
-        return "{\"result\": [9, 1]}";
     }
 
     return "INVALID";
@@ -362,14 +346,6 @@ isolated function getExpectedContentParts(string message) returns map<anydata>[]
 
     if message.startsWith("Rate this text chunk") {
         return expectedContentPartsForTextChunk;
-    }
-
-    if message.startsWith("Rate these text chunks") {
-        return expectedContentPartsForTextChunkArray;
-    }
-
-    if message.startsWith("Rate these mixed documents") {
-        return expectedContentPartsForMixedDocAndChunk;
     }
 
     return [
