@@ -169,7 +169,7 @@ isolated function getTheMockLLMResult(string message) returns string {
     }
 
     if message.startsWith("Rate this text chunk") {
-        return "{\"result\": 4}";
+        return {result: 4}.toJsonString();
     }
 
     return "INVALID";
