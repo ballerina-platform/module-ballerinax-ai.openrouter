@@ -17,3 +17,9 @@ groupId = "io.ballerina.lib"
 artifactId = "ai.openrouter-native"
 version = "1.0.1"
 path = "../native/build/libs/ai.openrouter-native-1.0.1-SNAPSHOT.jar"
+
+[[dependency]]
+org = "ballerinax"
+name = "openrouter"
+version = "1.1.2"
+repository = "local"
