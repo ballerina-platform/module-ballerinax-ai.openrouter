@@ -14,7 +14,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-
 isolated function getExpectedParameterSchema(string message) returns map<json> {
     if message.startsWith("Evaluate this") {
         return expectedParameterSchemaStringForRateBlog6;
@@ -38,6 +37,14 @@ isolated function getExpectedParameterSchema(string message) returns map<json> {
 
     if message.startsWith("Tell me") {
         return expectedParameterSchemaStringForRateBlog4;
+    }
+
+    if message.startsWith("How would you rate these text chunks") {
+        return expectedParameterSchemaStringForRateBlog5;
+    }
+
+    if message.startsWith("How would you rate this text chunk") {
+        return expectedParameterSchemaStringForRateBlog;
     }
 
     if message.startsWith("How would you rate these text blogs") {
@@ -118,6 +125,14 @@ isolated function getTheMockLLMResult(string message) returns string {
 
     if message.startsWith("Which country") {
         return "{\"result\": \"Sri Lanka\"}";
+    }
+
+    if message.startsWith("How would you rate these text chunks") {
+        return string `{"result": [${review}, ${review}]}`;
+    }
+
+    if message.startsWith("How would you rate this text chunk") {
+        return "{\"result\": 4}";
     }
 
     if message.startsWith("How would you rate these text blogs") {
@@ -216,6 +231,14 @@ isolated function getExpectedContentParts(string message) returns map<anydata>[]
 
     if message.startsWith("Tell me") {
         return expectedContentPartsForRateBlog4;
+    }
+
+    if message.startsWith("How would you rate these text chunks") {
+        return expectedContentPartsForTextChunkArray;
+    }
+
+    if message.startsWith("How would you rate this text chunk") {
+        return expectedContentPartsForTextChunk;
     }
 
     if message.startsWith("How would you rate these text blogs") {

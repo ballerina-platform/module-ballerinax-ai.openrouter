@@ -25,6 +25,9 @@ const DEFAULT_MAX_TOKEN_COUNT = 512;
 # ModelProvider is a client class that provides an interface for interacting with
 # LLMs via the OpenRouter unified API, which supports models from OpenAI, Anthropic,
 # Google, Meta, Mistral, and many other providers.
+@display {
+    label: "OpenRouter Model Provider"
+}
 public isolated distinct client class ModelProvider {
     *ai:ModelProvider;
     private final openrouter:Client openrouterClient;

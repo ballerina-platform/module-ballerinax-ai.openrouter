@@ -153,6 +153,20 @@ function testGenerateMethodWithImageDocumentsandTextDocuments() returns ai:Error
 }
 
 @test:Config
+function testGenerateMethodWithTextChunk() returns error? {
+    ai:TextChunk chunk = {content: string `Title: ${blog1.title} Content: ${blog1.content}`};
+    ai:TextChunk[] chunks = [chunk, chunk];
+    int maxScore = 10;
+
+    int rating = check provider->generate(`How would you rate this text chunk content out of ${maxScore}. ${chunk}.`);
+    test:assertEquals(rating, 4);
+
+    Review r = check review.fromJsonStringWithType(Review);
+    Review[] result = check provider->generate(`How would you rate these text chunks out of ${maxScore}. ${chunks}. Thank you!`);
+    test:assertEquals(result, [r, r]);
+}
+
+@test:Config
 function testGenerateMethodWithAudioDocument() returns ai:Error? {
     ai:AudioDocument aud = {
         content: sampleBinaryData,
