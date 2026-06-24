@@ -9,6 +9,12 @@ repository = "https://github.com/ballerina-platform/module-ballerinax-ai.openrou
 version = "1.0.1"
 icon="icon.png"
 
+[[dependency]]
+org = "ballerina"
+name = "ai"
+version = "1.11.3"
+repository = "local"
+
 [platform.java21]
 graalvmCompatible = true
 
