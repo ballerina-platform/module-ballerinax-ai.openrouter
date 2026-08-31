@@ -372,6 +372,45 @@ isolated function buildOpenRouterClient(string apiKey, string serviceUrl,
     return 'client;
 }
 
+# Builds the raw HTTP client backing `chatStream`.
+#
+# The generated OpenRouter connector deserializes the full response body, so a streaming
+# call cannot go through it and needs a plain `http:Client` instead. This mirrors
+# `buildOpenRouterClient` field for field, so a provider configured with a proxy, a custom
+# truststore, or tuned pool/retry/limit settings behaves the same whether the caller uses
+# `chat` or `chatStream`.
+#
+# + apiKey - The OpenRouter API key
+# + serviceUrl - The base URL of the OpenRouter API endpoint
+# + connectionConfig - The connection configuration to mirror onto the streaming client
+# + return - The streaming HTTP client, or an `ai:Error` if it cannot be initialized
+isolated function buildStreamClient(string apiKey, string serviceUrl,
+        ConnectionConfig connectionConfig) returns http:Client|ai:Error {
+    http:ClientConfiguration streamClientConfig = {
+        auth: {token: apiKey},
+        httpVersion: connectionConfig.httpVersion,
+        http1Settings: connectionConfig.http1Settings ?: {},
+        http2Settings: connectionConfig.http2Settings ?: {},
+        timeout: connectionConfig.timeout,
+        forwarded: connectionConfig.forwarded,
+        poolConfig: connectionConfig.poolConfig,
+        cache: connectionConfig.cache ?: {},
+        compression: connectionConfig.compression,
+        circuitBreaker: connectionConfig.circuitBreaker,
+        retryConfig: connectionConfig.retryConfig,
+        responseLimits: connectionConfig.responseLimits ?: {},
+        secureSocket: connectionConfig.secureSocket,
+        proxy: connectionConfig.proxy,
+        validation: connectionConfig.validation
+    };
+
+    http:Client|error streamClient = new (serviceUrl, streamClientConfig);
+    if streamClient is error {
+        return error ai:Error("Failed to initialize the OpenRouter streaming client", streamClient);
+    }
+    return streamClient;
+}
+
 isolated function convertMessageToJson(ai:ChatMessage[]|ai:ChatMessage messages) returns json|ai:Error {
     if messages is ai:ChatMessage[] {
         json[] result = [];

@@ -9,10 +9,24 @@ repository = "https://github.com/ballerina-platform/module-ballerinax-ai.openrou
 version = "1.0.1"
 icon="icon.png"
 
+# TODO: Remove this block before merging.
+# The streaming API (`ai:ChatCompletionChunk`, `ModelProvider.chatStream`) is not in any
+# published `ballerina/ai` release yet - as of `ai` 1.14.1 on Central it exists only in a
+# local build of the `feat/add-chat-stream-support` branch of module-ballerina-ai. Once
+# that lands and is released, drop this block and let `ai` resolve from Central.
+#
+# Two caveats while it is here:
+#   1. `./gradlew build` regenerates Ballerina.toml from build-config/resources/Ballerina.toml,
+#      which has no such block, so this pin applies to `bal build` only - a gradle/CI build
+#      still resolves `ai` from Central and will fail to compile the streaming code.
+#   2. The local bala is version 1.13.0, which collides with the *published* 1.13.0 that
+#      has no streaming API. `repository = "local"` is what disambiguates them, so if this
+#      block is dropped before the real release lands, resolution silently falls back to
+#      the Central 1.13.0 and the failure looks like missing `ai` symbols.
 [[dependency]]
 org = "ballerina"
 name = "ai"
-version = "1.11.3"
+version = "1.13.0"
 repository = "local"
 
 [platform.java21]

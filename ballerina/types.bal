@@ -89,24 +89,30 @@ public type ConnectionConfig record {|
 
 # A streamed chunk of a chat completion response, as part of a Server-Sent Events
 # stream from the /chat/completions endpoint (object "chat.completion.chunk").
+# Only `choices` is required. OpenRouter fronts many upstream providers and the envelope
+# fields vary between them, so every other field is optional or nilable: a chunk that omits
+# one still carries its content fragment, and rejecting it would surface as a hard stream
+# error now that unparseable frames are no longer skipped.
 type CreateChatCompletionStreamResponse record {
     # Unique identifier for the chat completion; the same across every chunk
-    string id;
+    string id?;
     # Object type, always "chat.completion.chunk"
-    string 'object;
+    string 'object?;
     # Unix timestamp (seconds) of creation; the same across every chunk
-    int created;
+    int created?;
     # The model used to generate the completion
-    string model;
+    string model?;
     # A list of chat completion choices; can hold more than one when `n` > 1,
     # or be empty for the final usage-only chunk
     ChatCompletionStreamChoice[] choices;
-    # Fingerprint of the backend configuration the model runs with
-    string system_fingerprint?;
+    # Fingerprint of the backend configuration the model runs with; absent or
+    # explicitly null on some OpenAI-compatible upstream providers
+    string? system_fingerprint = ();
     # The service tier used for processing the request
     string? service_tier = ();
-    # Token usage statistics. Null on every chunk except the final one, and only
-    # present when `stream_options: { include_usage: true }` was set
+    # Token usage statistics. Null on every chunk except the final one, where OpenRouter
+    # always includes full usage details (`stream_options.include_usage` is deprecated
+    # and has no effect).
     CompletionUsage? usage = ();
 };
 
@@ -199,8 +205,9 @@ type ChatCompletionTokenTopLogprob record {
     int[]? bytes = ();
 };
 
-# Usage statistics for the completion request, sent on the final chunk when
-# `stream_options: { include_usage: true }` is set
+# Usage statistics for the completion request, sent on the final chunk. OpenRouter always
+# includes full usage details there; `stream_options.include_usage` is deprecated and has
+# no effect.
 type CompletionUsage record {
     # Number of tokens in the prompt
     int prompt_tokens;
@@ -286,7 +293,15 @@ isolated function toAiChunk(CreateChatCompletionStreamResponse w) returns ai:Cha
         choices.push({index: c.index, delta, finishReason: mapFinishReason(c.finish_reason)});
     }
 
-    ai:ChatCompletionChunk chunk = {id: w.id, model: w.model, choices};
+    ai:ChatCompletionChunk chunk = {choices};
+    string? id = w?.id;
+    if id is string {
+        chunk.id = id;
+    }
+    string? model = w?.model;
+    if model is string {
+        chunk.model = model;
+    }
     CompletionUsage? usage = w.usage;
     if usage is CompletionUsage {
         chunk.usage = {
@@ -298,15 +313,39 @@ isolated function toAiChunk(CreateChatCompletionStreamResponse w) returns ai:Cha
     return chunk;
 }
 
+# Extracts the message from an OpenRouter `{"error": {...}}` frame, which the API emits
+# both as the body of a non-2xx streaming response and mid-stream when a generation is cut
+# short (an upstream provider failing part-way, a moderation stop, or credits running out).
+#
+# + payload - The parsed JSON payload of a response body or one SSE frame
+# + return - The error message, or `()` when the payload is not an error frame
+isolated function extractStreamErrorFrame(json payload) returns string? {
+    if payload !is map<json> {
+        return ();
+    }
+    json? failure = payload["error"];
+    if failure is () {
+        return ();
+    }
+    if failure is map<json> {
+        json? message = failure["message"];
+        if message is string {
+            return message;
+        }
+    }
+    return failure.toJsonString();
+}
+
 # Safely maps an OpenRouter role string onto the `ai:ROLE` enum; returns `()` for
 # absent or unrecognized values rather than panicking on a cast.
 #
 # + role - The role string from the wire delta
 # + return - The mapped `ai:ROLE`, or `()` when absent/unrecognized
 isolated function mapRole(string? role) returns ai:ROLE? {
-    // Streamed response deltas only carry the "assistant" role; "system"/"user"
-    // are handled for completeness. ("function" is request-only and the `ai`
-    // enum member is not accessible here, so it is intentionally omitted.)
+    // Streamed response deltas only carry the "assistant" role; "system"/"user" are
+    // handled for completeness. `ai:FUNCTION` is deliberately omitted: the "function"
+    // role is request-only and never appears in a response delta, so treating it as
+    // unrecognized is correct rather than a gap.
     match role {
         "system" => {
             return ai:SYSTEM;

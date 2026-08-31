@@ -61,15 +61,9 @@ public isolated distinct client class ModelProvider {
         if openrouterClient is ai:Error {
             return openrouterClient;
         }
-        http:Client|error streamClient = new (serviceUrl, {
-            auth: {
-                token: apiKey
-            },
-            httpVersion: connectionConfig.httpVersion,
-            timeout: connectionConfig.timeout
-        });
-        if streamClient is error {
-            return error ai:Error("Failed to initialize the OpenRouter streaming client", streamClient);
+        http:Client|ai:Error streamClient = buildStreamClient(apiKey, serviceUrl, connectionConfig);
+        if streamClient is ai:Error {
+            return streamClient;
         }
         self.openrouterClient = openrouterClient;
         self.streamClient = streamClient;
@@ -196,19 +190,37 @@ public isolated distinct client class ModelProvider {
     # + tools - Tool definitions to be used for the tool call
     # + stop - Stop sequence to stop the completion
     # + return - A stream of chat completion chunks, or an error in case of failures
-    remote function chatStream(ai:ChatMessage[]|ai:ChatUserMessage messages,
+    isolated remote function chatStream(ai:ChatMessage[]|ai:ChatUserMessage messages,
             ai:ChatCompletionFunctions[] tools = [], string? stop = ())
             returns stream<ai:ChatCompletionChunk, ai:Error?>|ai:Error {
+        observe:ChatSpan span = observe:createChatSpan(self.modelType);
+        span.addProvider("openrouter");
+        if stop is string {
+            span.addStopSequence(stop);
+        }
+        decimal? temperature = self.temperature;
+        if temperature is decimal {
+            span.addTemperature(temperature);
+        }
+        json|ai:Error inputMessage = convertMessageToJson(messages);
+        if inputMessage is json {
+            span.addInputMessages(inputMessage);
+        }
+
+        openrouter:Message[]|ai:Error payloadMessages = self.prepareCompletionRequestMessages(messages, tools);
+        if payloadMessages is ai:Error {
+            span.close(payloadMessages);
+            return payloadMessages;
+        }
         openrouter:ChatGenerationParams request = {
             max_completion_tokens: <decimal>self.maxTokens,
             stop,
             model: self.modelType,
-            messages: check self.prepareCompletionRequestMessages(messages, tools),
+            messages: payloadMessages,
             // OpenRouter always includes full usage details on the final chunk,
             // so `stream_options.include_usage` is unnecessary (and deprecated).
             'stream: true
         };
-        decimal? temperature = self.temperature;
         if temperature is decimal {
             request.temperature = temperature;
         }
@@ -217,28 +229,29 @@ public isolated distinct client class ModelProvider {
                 'type: "function",
                 'function: {name: t.name, description: t.description, parameters: t.parameters}
             });
+            span.addTools(tools);
         }
 
         // The OpenRouter connector deserializes the full response, so streaming
         // uses the raw `streamClient`; copy through the attribution headers.
         map<string|string[]> headers = {};
         foreach [string, anydata & readonly] [key, value] in self.requestHeaders.entries() {
-            if value is string {
-                headers[key] = value;
-            }
+            // Every declared field of `SendChatCompletionRequestHeaders` is a `string` and
+            // `init` only ever sets the two attribution headers, so this never widens a
+            // value. Going through `toString` rather than filtering on `value is string`
+            // keeps a future non-string field from being dropped silently.
+            headers[key] = value.toString();
         }
 
-        http:Response|error response = self.streamClient->post("/chat/completions", request, headers);
-        if response is error {
-            return error ai:LlmConnectionError("Error while connecting to the model for streaming", response);
-        }
-        stream<http:SseEvent, error?>|error sseStream = response.getSseEventStream();
-        if sseStream is error {
-            return error ai:Error("Failed to open the SSE stream from the model", sseStream);
+        stream<http:SseEvent, error?>|ai:Error sseStream =
+            openSseStream(self.streamClient, "/chat/completions", request, headers);
+        if sseStream is ai:Error {
+            span.close(sseStream);
+            return sseStream;
         }
         // Assigning to an explicitly typed local first; `new (...)` cannot infer
         // the stream type when the function returns a union (`stream<...>|Error`).
-        stream<ai:ChatCompletionChunk, ai:Error?> chunkStream = new (new OpenRouterChunkIterator(sseStream));
+        stream<ai:ChatCompletionChunk, ai:Error?> chunkStream = new (new OpenRouterChunkIterator(sseStream, span));
         return chunkStream;
     }
 
@@ -348,25 +361,102 @@ public isolated distinct client class ModelProvider {
     }
 }
 
+# Posts a streaming chat request and opens the Server-Sent Event stream for the response.
+#
+# The status code is checked before the stream is opened. `http:Response` as a target type
+# suppresses the client's usual non-2xx-to-error mapping, so without this check OpenRouter's
+# own message for an expired key, exhausted credits, or a rate limit is discarded, and
+# `getSseEventStream` fails the content-type check instead - telling the caller only that
+# the stream could not be opened. Reading the error body also drains the payload, which
+# releases the connection back to the pool.
+#
+# + streamClient - The raw HTTP client for the OpenRouter API
+# + path - The endpoint path to post to
+# + request - The request payload
+# + headers - The attribution headers to send with the request
+# + return - The SSE event stream, or an `ai:Error` describing the failure
+isolated function openSseStream(http:Client streamClient, string path, anydata request,
+        map<string|string[]> headers) returns stream<http:SseEvent, error?>|ai:Error {
+    http:Response|error response = streamClient->post(path, request, headers);
+    if response is error {
+        return error ai:LlmConnectionError("Error while connecting to the model for streaming", response);
+    }
+    int statusCode = response.statusCode;
+    if statusCode < 200 || statusCode >= 300 {
+        string? detail = extractHttpErrorDetail(response);
+        string message = detail is string
+            ? string `OpenRouter rejected the streaming request with status ${statusCode}: ${detail}`
+            : string `OpenRouter rejected the streaming request with status ${statusCode}`;
+        return error ai:LlmConnectionError(message);
+    }
+    stream<http:SseEvent, error?>|error sseStream = response.getSseEventStream();
+    if sseStream is error {
+        return error ai:LlmConnectionError("Failed to open the SSE stream from the model", sseStream);
+    }
+    return sseStream;
+}
+
+# Pulls the human-readable detail out of a non-2xx streaming response, which carries the
+# usual OpenRouter `{"error": {"message": ...}}` body rather than an event stream. Reading
+# it also drains the payload, so the connection is released back to the pool.
+#
+# + response - The non-2xx response
+# + return - The failure detail, or `()` when the body carries none
+isolated function extractHttpErrorDetail(http:Response response) returns string? {
+    // The body is read exactly once, as text: the first read drains the entity, so probing
+    // it as JSON first and falling back to text leaves the fallback with nothing to read.
+    // OpenRouter answers a rejected request with a JSON error envelope, but an edge or an
+    // upstream provider can put a plain-text body behind the same status.
+    string|error text = response.getTextPayload();
+    if text is error {
+        return ();
+    }
+    string trimmed = text.trim();
+    if trimmed == "" {
+        return ();
+    }
+    json|error payload = trimmed.fromJsonString();
+    if payload is error {
+        return trimmed;
+    }
+    string? detail = extractStreamErrorFrame(payload);
+    if detail is string {
+        return detail;
+    }
+    return trimmed;
+}
+
 # Iterator that converts OpenRouter's Server-Sent Event stream into a stream of
 # normalized `ai:ChatCompletionChunk` values. Each `data:` line is parsed into the
-# OpenRouter wire chunk and mapped via `toAiChunk`; the terminating `[DONE]` sentinel,
-# blank lines, and unparseable keep-alive comments are skipped.
+# OpenRouter wire chunk and mapped via `toAiChunk`; the terminating `[DONE]` sentinel ends
+# the stream, and blank lines and keep-alive comments are skipped. The chat span is closed
+# once the stream is done, whether it ended cleanly, failed, or was closed by the caller.
+#
+# A frame that cannot be parsed is reported as an error rather than skipped: OpenRouter
+# emits `{"error": {...}}` mid-stream when a generation is cut short, and skipping it would
+# end the stream silently, handing the caller a truncated answer that looks complete - or,
+# if every frame is unparseable, an empty answer that looks successful.
 class OpenRouterChunkIterator {
     private stream<http:SseEvent, error?> sseStream;
+    private observe:ChatSpan span;
+    private boolean done = false;
 
-    isolated function init(stream<http:SseEvent, error?> sseStream) {
+    isolated function init(stream<http:SseEvent, error?> sseStream, observe:ChatSpan span) {
         self.sseStream = sseStream;
+        self.span = span;
     }
 
     public isolated function next() returns record {|ai:ChatCompletionChunk value;|}|ai:Error? {
+        if self.isDone() {
+            return ();
+        }
         while true {
             record {|http:SseEvent value;|}|error? event = self.sseStream.next();
             if event is () {
-                return ();
+                return self.finish();
             }
             if event is error {
-                return error ai:Error("Error while reading the model stream", event);
+                return self.failStream(error ai:LlmConnectionError("Error while reading the model stream", event));
             }
             string? data = event.value.data;
             if data is () {
@@ -377,26 +467,93 @@ class OpenRouterChunkIterator {
                 continue;
             }
             if trimmedData == "[DONE]" {
-                return ();
+                return self.finish();
             }
             json|error payload = trimmedData.fromJsonString();
             if payload is error {
-                continue;
+                return self.failStream(error ai:LlmInvalidResponseError(
+                        "Invalid or malformed chunk received from the model", payload));
+            }
+            string? errorMessage = extractStreamErrorFrame(payload);
+            if errorMessage is string {
+                return self.failStream(error ai:LlmError(
+                        string `Error received mid-stream from the model: ${errorMessage}`));
             }
             CreateChatCompletionStreamResponse|error wireChunk = payload.cloneWithType();
             if wireChunk is error {
-                continue;
+                return self.failStream(error ai:LlmInvalidResponseError(
+                        "Unexpected chunk shape received from the model", wireChunk));
             }
-            return {value: toAiChunk(wireChunk)};
+            ai:ChatCompletionChunk chunk = toAiChunk(wireChunk);
+            self.recordChunk(chunk);
+            return {value: chunk};
         }
     }
 
     public isolated function close() returns ai:Error? {
+        if !self.markDone() {
+            self.span.close();
+        }
         error? result = self.sseStream.close();
         if result is error {
-            return error ai:Error("Error while closing the model stream", result);
+            return error ai:LlmConnectionError("Error while closing the model stream", result);
         }
         return ();
+    }
+
+    // Records the finish reason and usage the span reports for the completed generation.
+    // OpenRouter always sends full usage details on the final chunk.
+    private isolated function recordChunk(ai:ChatCompletionChunk chunk) {
+        ai:ChatCompletionChunkChoice[] choices = chunk.choices;
+        if choices.length() > 0 {
+            ai:FinishReason? finishReason = choices[0].finishReason;
+            if finishReason is ai:FinishReason {
+                self.span.addFinishReason(finishReason);
+                self.span.addOutputType(observe:TEXT);
+            }
+        }
+        ai:CompletionTokenUsage? usage = chunk?.usage;
+        if usage is ai:CompletionTokenUsage {
+            int? promptTokens = usage?.promptTokens;
+            if promptTokens is int {
+                self.span.addInputTokenCount(promptTokens);
+            }
+            int? completionTokens = usage?.completionTokens;
+            if completionTokens is int {
+                self.span.addOutputTokenCount(completionTokens);
+            }
+        }
+    }
+
+    // Ends the stream cleanly, closing the span exactly once.
+    private isolated function finish() returns () {
+        if !self.markDone() {
+            self.span.close();
+        }
+        return ();
+    }
+
+    // Ends the stream with an error, closing the span exactly once.
+    private isolated function failStream(ai:Error err) returns ai:Error {
+        if !self.markDone() {
+            self.span.close(err);
+        }
+        return err;
+    }
+
+    private isolated function isDone() returns boolean {
+        lock {
+            return self.done;
+        }
+    }
+
+    // Marks the stream as done, returning whether it was already marked before this call.
+    private isolated function markDone() returns boolean {
+        lock {
+            boolean wasDone = self.done;
+            self.done = true;
+            return wasDone;
+        }
     }
 }
 
@@ -451,11 +608,9 @@ class ChunkTextIterator {
         }
     }
 
+    // `chunks` is the `chatStream` stream, whose `close` already returns an `ai:Error`
+    // carrying the real failure; re-wrapping it would only bury that message a level down.
     public isolated function close() returns ai:Error? {
-        error? result = self.chunks.close();
-        if result is error {
-            return error ai:Error("Error while closing the model stream", result);
-        }
-        return ();
+        return self.chunks.close();
     }
 }

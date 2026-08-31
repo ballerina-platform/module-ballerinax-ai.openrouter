@@ -8,7 +8,8 @@
 
 [OpenRouter](https://openrouter.ai) is a unified API gateway that provides access to **200+ Large Language
 Models** from leading AI providers through a single, OpenAI-compatible API. This module provides a
-Ballerina model provider that integrates OpenRouter with the Ballerina AI framework.
+Ballerina model provider that integrates OpenRouter with the Ballerina AI framework,
+including streaming responses.
 
 
 ## Issues and projects
