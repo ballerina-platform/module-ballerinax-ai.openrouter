@@ -111,6 +111,7 @@ clean {
 }
 
 build.dependsOn ':ai.openrouter-native:build'
+test.dependsOn ':ai.openrouter-native:build'
 build.dependsOn ":ai.openrouter-compiler-plugin:build"
 build.dependsOn "generatePomFileForMavenPublication"
 publishToMavenLocal.dependsOn build
