@@ -1,8 +1,6 @@
 ## Overview
 
-This module offers APIs for connecting with 200+ Large Language Models (LLMs) through the
-[OpenRouter](https://openrouter.ai) unified API, including models from OpenAI, Anthropic,
-Google, Meta, Mistral, and many more providers.
+The `ai.openrouter` module provides `ModelProvider` and `EmbeddingProvider` implementations for the [`ballerina/ai`](https://central.ballerina.io/ballerina/ai/latest) agent framework, backed by [OpenRouter](https://openrouter.ai)'s unified API. Use it to drive 200+ LLMs from OpenAI, Anthropic, Google, Meta, Mistral, and other providers through a single OpenRouter endpoint in your Ballerina AI agents.
 
 ## Prerequisites
 
