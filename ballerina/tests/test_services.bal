@@ -132,6 +132,28 @@ service /llm on new http:Listener(8081) {
             };
         }
 
+        if firstContent == "Solve this hard problem" {
+            // Reasoning model spends the whole token budget on reasoning — no content
+            return getChatMockResponse("chat-length-id", (), "length", nativeFinishReason = "max_tokens",
+                    reasoning = "Let me think step by step...");
+        }
+
+        if firstContent == "Are you there?" {
+            // Empty-string content with no finish reason, e.g. a cold-starting model
+            return getChatMockResponse("chat-empty-id", "", ());
+        }
+
+        if firstContent == "Help me with something disallowed" {
+            // Refusal with no content
+            return getChatMockResponse("chat-refusal-id", (), "stop", refusal = "I can't help with that.");
+        }
+
+        if firstContent == "Describe the weather" {
+            // Content returned as an array of content parts
+            return getChatMockResponse("chat-parts-id",
+                    [{"type": "text", "text": "It is sunny. "}, {"type": "text", "text": "No rain expected."}], "stop");
+        }
+
         return error(string `Unexpected message in chat mock: ${firstContent}`);
     }
 }

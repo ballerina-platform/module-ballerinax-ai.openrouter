@@ -305,11 +305,27 @@ function testChatWithToolCallsResponse() returns error? {
     test:assertEquals(call.arguments["destination"], "London");
 }
 
-// Model ignores tools and returns plain text — must get a meaningful LlmInvalidResponseError.
+// Model answers in plain text despite tools being provided — a valid turn (this is how an
+// agent loop ends), so the text must be returned rather than an error.
 @test:Config
-function testChatToolsIgnoredByModel() returns error? {
+function testChatTextResponseWithToolsProvided() returns error? {
     ModelProvider chatProvider = check new (API_KEY, "openai/gpt-5", CHAT_MOCK_SERVICE_URL);
     ai:ChatMessage[] messages = [{role: ai:USER, content: "Summarize this text"}];
+
+    ai:ChatAssistantMessage|ai:Error response = chatProvider->chat(messages, [getWeatherTool]);
+    test:assertTrue(response is ai:ChatAssistantMessage,
+            string `Expected ChatAssistantMessage but got: ${response is ai:Error ? (<ai:Error>response).message() : ""}`);
+
+    ai:ChatAssistantMessage msg = check response;
+    test:assertEquals(msg.content, "Here is the summary...");
+    test:assertEquals(msg.toolCalls, ());
+}
+
+// Reasoning exhausted the token budget — no content, must point at 'maxTokens'.
+@test:Config
+function testChatEmptyResponseDueToTokenLimit() returns error? {
+    ModelProvider chatProvider = check new (API_KEY, "openai/gpt-5", CHAT_MOCK_SERVICE_URL);
+    ai:ChatMessage[] messages = [{role: ai:USER, content: "Solve this hard problem"}];
 
     ai:ChatAssistantMessage|ai:Error response = chatProvider->chat(messages, [getWeatherTool]);
     test:assertTrue(response is ai:LlmInvalidResponseError,
@@ -317,8 +333,48 @@ function testChatToolsIgnoredByModel() returns error? {
 
     string errMsg = (<ai:Error>response).message();
     test:assertTrue(errMsg.includes("openai/gpt-5"), "Error must name the model");
-    test:assertTrue(errMsg.includes("1"), "Error must state how many tools were provided");
-    test:assertTrue(errMsg.includes("finish_reason: 'stop'"), "Error must include finish_reason from the response");
+    test:assertTrue(errMsg.includes("finish_reason: 'length'"), "Error must include finish_reason");
+    test:assertTrue(errMsg.includes("native_finish_reason: 'max_tokens'"), "Error must include native_finish_reason");
+    test:assertTrue(errMsg.includes("maxTokens"), "Error must suggest raising maxTokens");
+}
+
+// Empty-string content with no finish reason must be an error, not a silent empty answer.
+@test:Config
+function testChatEmptyStringResponse() returns error? {
+    ModelProvider chatProvider = check new (API_KEY, "openai/gpt-5", CHAT_MOCK_SERVICE_URL);
+    ai:ChatMessage[] messages = [{role: ai:USER, content: "Are you there?"}];
+
+    ai:ChatAssistantMessage|ai:Error response = chatProvider->chat(messages, []);
+    test:assertTrue(response is ai:LlmInvalidResponseError,
+            string `Expected LlmInvalidResponseError but got: ${response is ai:Error ? (<ai:Error>response).message() : "success"}`);
+
+    string errMsg = (<ai:Error>response).message();
+    test:assertTrue(errMsg.includes("neither content nor a tool call"));
+    test:assertTrue(errMsg.includes("Retrying"), "Error must suggest retrying");
+}
+
+// Refusal with no content must surface the refusal text in the error.
+@test:Config
+function testChatRefusalResponse() returns error? {
+    ModelProvider chatProvider = check new (API_KEY, "openai/gpt-5", CHAT_MOCK_SERVICE_URL);
+    ai:ChatMessage[] messages = [{role: ai:USER, content: "Help me with something disallowed"}];
+
+    ai:ChatAssistantMessage|ai:Error response = chatProvider->chat(messages, []);
+    test:assertTrue(response is ai:LlmInvalidResponseError,
+            string `Expected LlmInvalidResponseError but got: ${response is ai:Error ? (<ai:Error>response).message() : "success"}`);
+    test:assertTrue((<ai:Error>response).message().includes("I can't help with that."),
+            "Error must include the refusal");
+}
+
+// Content returned as an array of text parts must be joined, not dropped.
+@test:Config
+function testChatContentPartsResponse() returns error? {
+    ModelProvider chatProvider = check new (API_KEY, "openai/gpt-5", CHAT_MOCK_SERVICE_URL);
+    ai:ChatMessage[] messages = [{role: ai:USER, content: "Describe the weather"}];
+
+    ai:ChatAssistantMessage msg = check chatProvider->chat(messages, [getWeatherTool]);
+    test:assertEquals(msg.content, "It is sunny. No rain expected.");
+    test:assertEquals(msg.toolCalls, ());
 }
 
 // Model returns plain text with no tool call — toolCalls must be nil.

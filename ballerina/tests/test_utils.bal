@@ -366,3 +366,26 @@ isolated function getExpectedContentParts(string message) returns map<anydata>[]
         }
     ];
 }
+
+isolated function getChatMockResponse(string id, json content, string? finishReason,
+        string? nativeFinishReason = (), string? refusal = (), string? reasoning = ()) returns json {
+    map<json> message = {"role": "assistant", "content": content};
+    if refusal is string {
+        message["refusal"] = refusal;
+    }
+    if reasoning is string {
+        message["reasoning"] = reasoning;
+    }
+    map<json> choice = {"finish_reason": finishReason, "index": 0, "message": message};
+    if nativeFinishReason is string {
+        choice["native_finish_reason"] = nativeFinishReason;
+    }
+    return {
+        "id": id,
+        "object": "chat.completion",
+        "created": 1234567890,
+        "model": "openai/gpt-5",
+        "choices": [choice],
+        "usage": {"prompt_tokens": 10, "completion_tokens": 512, "total_tokens": 522}
+    };
+}

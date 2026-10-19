@@ -149,13 +149,10 @@ public isolated distinct client class ModelProvider {
             span.close(message);
             return message;
         }
-        if tools.length() > 0 && message.toolCalls is () {
-            string finishInfo = finishReason is string ? string ` (finish_reason: '${finishReason}')` : "";
-            ai:Error err = error ai:LlmInvalidResponseError(
-                string `Model '${self.modelType}' did not return a tool call despite ${tools.length()} ` +
-                string `tool(s) being provided${finishInfo}. The model may not support function calling, ` +
-                "or it chose to respond with plain text. Try a model that supports tool use, or adjust the prompt."
-            );
+        // A reply with neither text nor a tool call is not avalid turn. Returning it as-is would surface as an
+        // opaque downstream failure, or as a silent empty answer when the content is "".
+        if message.content is () && message.toolCalls is () {
+            ai:Error err = error ai:LlmInvalidResponseError(buildEmptyResponseMessage(self.modelType, choices[0]));
             span.close(err);
             return err;
         }
@@ -235,9 +232,9 @@ public isolated distinct client class ModelProvider {
     returns ai:ChatAssistantMessage|ai:LlmError {
         do {
             ai:ChatAssistantMessage chatAssistantMessage = {role: ai:ASSISTANT};
-            anydata? rawContent = message?.content;
-            if rawContent is string {
-                chatAssistantMessage.content = rawContent;
+            string? content = extractTextContent(message?.content);
+            if content is string {
+                chatAssistantMessage.content = content;
             }
             openrouter:ChatMessageToolCall[]? toolCalls = message?.tool_calls;
             if toolCalls is openrouter:ChatMessageToolCall[] && toolCalls.length() > 0 {
