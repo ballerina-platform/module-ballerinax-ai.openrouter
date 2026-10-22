@@ -170,6 +170,30 @@ service /llm on new http:Listener(8081) {
             return getChatMockResponse("chat-stop-id", (), "stop");
         }
 
+        if firstContent == "Weather in Colombo and Kandy" {
+            if messages.length() == 1 {
+                // Parallel tool calls with provider-issued ids
+                return getChatMockResponse("chat-parallel-id", (), "tool_calls", toolCalls = [
+                    {"id": "call_colombo", "type": "function",
+                        "function": {"name": "get_weather", "arguments": "{\"city\": \"Colombo\"}"}},
+                    {"id": "call_kandy", "type": "function",
+                        "function": {"name": "get_weather", "arguments": "{\"city\": \"Kandy\"}"}}
+                ]);
+            }
+            // Second turn — every tool call must be sent back, each answered by a matching tool result
+            int toolCallCount = check validateToolCallIds(messages);
+            if toolCallCount != 2 {
+                return error(string `Expected 2 tool calls in the assistant message, found ${toolCallCount}`);
+            }
+            return getChatMockResponse("chat-parallel-final-id", "It is sunny in both Colombo and Kandy.", "stop");
+        }
+
+        if firstContent == "What was the weather in Galle?" {
+            // Second turn of a call that had no provider-issued id
+            _ = check validateToolCallIds(messages);
+            return getChatMockResponse("chat-no-id-final-id", "It was sunny in Galle.", "stop");
+        }
+
         if firstContent == "Find flights to Paris" {
             // Tool call with empty-string content
             return getChatMockResponse("chat-tc-empty-id", "", "tool_calls", toolCalls = [{

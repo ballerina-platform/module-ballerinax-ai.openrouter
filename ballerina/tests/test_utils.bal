@@ -396,3 +396,26 @@ isolated function getChatMockResponse(string id, json content, string? finishRea
         "usage": {"prompt_tokens": 10, "completion_tokens": 512, "total_tokens": 522}
     };
 }
+
+// Validates that every tool result carries the id of a tool call in the preceding assistant message.
+// Returns the number of tool calls in the last assistant message.
+isolated function validateToolCallIds(json[] messages) returns int|error {
+    string[] toolCallIds = [];
+    foreach json message in messages {
+        map<json> msg = check message.cloneWithType();
+        if msg["role"] == "assistant" {
+            toolCallIds = [];
+            json[] toolCalls = check msg["tool_calls"].cloneWithType();
+            foreach json toolCall in toolCalls {
+                string toolCallId = check toolCall.id.ensureType();
+                toolCallIds.push(toolCallId);
+            }
+        } else if msg["role"] == "tool" {
+            string toolCallId = check msg["tool_call_id"].ensureType();
+            if toolCallIds.indexOf(toolCallId) is () {
+                return error(string `tool_call_id '${toolCallId}' not found in preceding tool calls ${toolCallIds.toString()}`);
+            }
+        }
+    }
+    return toolCallIds.length();
+}

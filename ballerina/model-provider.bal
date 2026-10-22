@@ -192,11 +192,11 @@ public isolated distinct client class ModelProvider {
                 openrouter:SystemMessage sysMsg = {role: "system", content: check getChatMessageStringContent(message.content)};
                 chatCompletionRequestMessages.push(sysMsg);
             } else if message is ai:ChatFunctionMessage {
-                // Map legacy function message to tool response; use name as tool_call_id
+                // The tool_call_id must match the id of the tool call in the preceding assistant message
                 openrouter:ToolResponseMessage toolMsg = {
                     role: "tool",
                     content: message.content ?: "",
-                    tool_call_id: message.name
+                    tool_call_id: getToolCallId(message?.id, message.name)
                 };
                 chatCompletionRequestMessages.push(toolMsg);
             }
@@ -209,17 +209,15 @@ public isolated distinct client class ModelProvider {
         openrouter:AssistantMessage assistantMessage = {role: "assistant"};
         ai:FunctionCall[]? toolCalls = message.toolCalls;
         if toolCalls is ai:FunctionCall[] && toolCalls.length() > 0 {
-            ai:FunctionCall functionCall = toolCalls[0];
-            assistantMessage.tool_calls = [
-                {
-                    id: "call_" + functionCall.name,
+            assistantMessage.tool_calls = from ai:FunctionCall functionCall in toolCalls
+                select {
+                    id: getToolCallId(functionCall?.id, functionCall.name),
                     'type: "function",
                     'function: {
                         name: functionCall.name,
                         arguments: functionCall.arguments.toJsonString()
                     }
-                }
-            ];
+                };
         }
         string? content = message?.content;
         if content is string {
@@ -243,6 +241,7 @@ public isolated distinct client class ModelProvider {
                 foreach openrouter:ChatMessageToolCall toolCall in toolCalls {
                     json arguments = check toolCall.'function.arguments.fromJsonString();
                     functionCalls.push({
+                        id: toolCall.id,
                         name: toolCall.'function.name,
                         arguments: check arguments.cloneWithType()
                     });

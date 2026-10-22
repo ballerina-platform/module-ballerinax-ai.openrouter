@@ -424,6 +424,42 @@ function testChatToolCallWithEmptyContent() returns error? {
     test:assertEquals(call.arguments["destination"], "Paris");
 }
 
+// Parallel tool calls must keep their provider-issued ids, and the second turn must send back
+// every tool call with tool results whose tool_call_id matches (validated by the mock).
+@test:Config
+function testChatParallelToolCallsRoundTrip() returns error? {
+    ModelProvider chatProvider = check new (API_KEY, "openai/gpt-5", CHAT_MOCK_SERVICE_URL);
+    ai:ChatMessage[] messages = [{role: ai:USER, content: "Weather in Colombo and Kandy"}];
+
+    ai:ChatAssistantMessage turn1 = check chatProvider->chat(messages, [getWeatherTool]);
+    ai:FunctionCall[] toolCalls = <ai:FunctionCall[]>turn1.toolCalls;
+    test:assertEquals(toolCalls.length(), 2);
+    test:assertEquals(toolCalls[0]?.id, "call_colombo");
+    test:assertEquals(toolCalls[1]?.id, "call_kandy");
+
+    messages.push(turn1);
+    foreach ai:FunctionCall toolCall in toolCalls {
+        messages.push({role: "function", name: toolCall.name, id: <string>toolCall?.id, content: "Sunny"});
+    }
+    ai:ChatAssistantMessage turn2 = check chatProvider->chat(messages, [getWeatherTool]);
+    test:assertEquals(turn2.content, "It is sunny in both Colombo and Kandy.");
+}
+
+// A tool call without a provider-issued id (e.g. legacy function_call) must get the same derived
+// id on the assistant tool call and on the tool result (validated by the mock).
+@test:Config
+function testChatToolCallWithoutIdRoundTrip() returns error? {
+    ModelProvider chatProvider = check new (API_KEY, "openai/gpt-5", CHAT_MOCK_SERVICE_URL);
+    ai:ChatMessage[] messages = [
+        {role: ai:USER, content: "What was the weather in Galle?"},
+        {role: ai:ASSISTANT, toolCalls: [{name: "get_weather", arguments: {"city": "Galle"}}]},
+        {role: "function", name: "get_weather", content: "Sunny"}
+    ];
+
+    ai:ChatAssistantMessage response = check chatProvider->chat(messages, [getWeatherTool]);
+    test:assertEquals(response.content, "It was sunny in Galle.");
+}
+
 // Content returned as an array of text parts must be joined, not dropped.
 @test:Config
 function testChatContentPartsResponse() returns error? {

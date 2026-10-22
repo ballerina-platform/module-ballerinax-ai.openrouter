@@ -449,3 +449,12 @@ isolated function buildEmptyResponseMessage(string modelType, openrouter:ChatRes
     }
     return message;
 }
+
+# Returns the id to send for a tool call or a tool result. Uses the provider-issued id when
+# present, and otherwise derives one from the function name, so the assistant tool call and
+# the matching tool result always carry the same id.
+#
+# + id - The provider-issued tool call id, if any
+# + name - The name of the called function
+# + return - The tool call id
+isolated function getToolCallId(string? id, string name) returns string => id ?: "call_" + name;
