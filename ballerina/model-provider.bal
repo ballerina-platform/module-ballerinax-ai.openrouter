@@ -149,7 +149,7 @@ public isolated distinct client class ModelProvider {
             span.close(message);
             return message;
         }
-        // A reply with neither text nor a tool call is not avalid turn. Returning it as-is would surface as an
+        // A reply with neither text nor a tool call is not a valid turn. Returning it as-is would surface as an
         // opaque downstream failure, or as a silent empty answer when the content is "".
         if message.content is () && message.toolCalls is () {
             ai:Error err = error ai:LlmInvalidResponseError(buildEmptyResponseMessage(self.modelType, choices[0]));

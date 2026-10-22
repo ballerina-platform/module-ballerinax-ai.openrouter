@@ -366,6 +366,64 @@ function testChatRefusalResponse() returns error? {
             "Error must include the refusal");
 }
 
+// Upstream provider error on the choice must be surfaced in the error.
+@test:Config
+function testChatProviderErrorResponse() returns error? {
+    ModelProvider chatProvider = check new (API_KEY, "openai/gpt-5", CHAT_MOCK_SERVICE_URL);
+    ai:ChatMessage[] messages = [{role: ai:USER, content: "Trigger an upstream failure"}];
+
+    ai:ChatAssistantMessage|ai:Error response = chatProvider->chat(messages, []);
+    test:assertTrue(response is ai:LlmInvalidResponseError,
+            string `Expected LlmInvalidResponseError but got: ${response is ai:Error ? (<ai:Error>response).message() : "success"}`);
+
+    string errMsg = (<ai:Error>response).message();
+    test:assertTrue(errMsg.includes("finish_reason: 'error'"), "Error must include finish_reason");
+    test:assertTrue(errMsg.includes("Upstream provider timed out"), "Error must include the provider error");
+}
+
+// Content filter block must be named in the error.
+@test:Config
+function testChatContentFilterResponse() returns error? {
+    ModelProvider chatProvider = check new (API_KEY, "openai/gpt-5", CHAT_MOCK_SERVICE_URL);
+    ai:ChatMessage[] messages = [{role: ai:USER, content: "Write something filtered"}];
+
+    ai:ChatAssistantMessage|ai:Error response = chatProvider->chat(messages, []);
+    test:assertTrue(response is ai:LlmInvalidResponseError,
+            string `Expected LlmInvalidResponseError but got: ${response is ai:Error ? (<ai:Error>response).message() : "success"}`);
+
+    string errMsg = (<ai:Error>response).message();
+    test:assertTrue(errMsg.includes("finish_reason: 'content_filter'"), "Error must include finish_reason");
+    test:assertTrue(errMsg.includes("content filter"), "Error must mention the content filter");
+}
+
+// Normal stop with no content and no other signal — error carries only the finish reason.
+@test:Config
+function testChatStopWithoutContentResponse() returns error? {
+    ModelProvider chatProvider = check new (API_KEY, "openai/gpt-5", CHAT_MOCK_SERVICE_URL);
+    ai:ChatMessage[] messages = [{role: ai:USER, content: "Stay silent"}];
+
+    ai:ChatAssistantMessage|ai:Error response = chatProvider->chat(messages, []);
+    test:assertTrue(response is ai:LlmInvalidResponseError,
+            string `Expected LlmInvalidResponseError but got: ${response is ai:Error ? (<ai:Error>response).message() : "success"}`);
+    test:assertEquals((<ai:Error>response).message(),
+            "Model 'openai/gpt-5' returned neither content nor a tool call (finish_reason: 'stop')");
+}
+
+// Tool call with empty-string content must keep the tool call and normalize content to nil.
+@test:Config
+function testChatToolCallWithEmptyContent() returns error? {
+    ModelProvider chatProvider = check new (API_KEY, "openai/gpt-5", CHAT_MOCK_SERVICE_URL);
+    ai:ChatMessage[] messages = [{role: ai:USER, content: "Find flights to Paris"}];
+
+    ai:ChatAssistantMessage msg = check chatProvider->chat(messages, [bookFlightTool]);
+    test:assertEquals(msg.content, ());
+    ai:FunctionCall[]? toolCalls = msg.toolCalls;
+    test:assertNotEquals(toolCalls, (), "toolCalls must be populated");
+    ai:FunctionCall call = (<ai:FunctionCall[]>toolCalls)[0];
+    test:assertEquals(call.name, "book_flight");
+    test:assertEquals(call.arguments["destination"], "Paris");
+}
+
 // Content returned as an array of text parts must be joined, not dropped.
 @test:Config
 function testChatContentPartsResponse() returns error? {

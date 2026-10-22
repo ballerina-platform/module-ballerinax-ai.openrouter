@@ -154,6 +154,31 @@ service /llm on new http:Listener(8081) {
                     [{"type": "text", "text": "It is sunny. "}, {"type": "text", "text": "No rain expected."}], "stop");
         }
 
+        if firstContent == "Trigger an upstream failure" {
+            // Upstream provider error reported on the choice
+            return getChatMockResponse("chat-error-id", (), "error",
+                    choiceError = {"code": 502, "message": "Upstream provider timed out"});
+        }
+
+        if firstContent == "Write something filtered" {
+            // Output blocked by the provider's content filter
+            return getChatMockResponse("chat-filter-id", (), "content_filter");
+        }
+
+        if firstContent == "Stay silent" {
+            // Normal stop with no content, no refusal and no error
+            return getChatMockResponse("chat-stop-id", (), "stop");
+        }
+
+        if firstContent == "Find flights to Paris" {
+            // Tool call with empty-string content
+            return getChatMockResponse("chat-tc-empty-id", "", "tool_calls", toolCalls = [{
+                "id": "call_paris",
+                "type": "function",
+                "function": {"name": "book_flight", "arguments": "{\"destination\": \"Paris\"}"}
+            }]);
+        }
+
         return error(string `Unexpected message in chat mock: ${firstContent}`);
     }
 }

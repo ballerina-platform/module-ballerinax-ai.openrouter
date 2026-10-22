@@ -368,7 +368,8 @@ isolated function getExpectedContentParts(string message) returns map<anydata>[]
 }
 
 isolated function getChatMockResponse(string id, json content, string? finishReason,
-        string? nativeFinishReason = (), string? refusal = (), string? reasoning = ()) returns json {
+        string? nativeFinishReason = (), string? refusal = (), string? reasoning = (),
+        map<json>? choiceError = (), json[]? toolCalls = ()) returns json {
     map<json> message = {"role": "assistant", "content": content};
     if refusal is string {
         message["refusal"] = refusal;
@@ -376,9 +377,15 @@ isolated function getChatMockResponse(string id, json content, string? finishRea
     if reasoning is string {
         message["reasoning"] = reasoning;
     }
+    if toolCalls is json[] {
+        message["tool_calls"] = toolCalls;
+    }
     map<json> choice = {"finish_reason": finishReason, "index": 0, "message": message};
     if nativeFinishReason is string {
         choice["native_finish_reason"] = nativeFinishReason;
+    }
+    if choiceError is map<json> {
+        choice["error"] = choiceError;
     }
     return {
         "id": id,
