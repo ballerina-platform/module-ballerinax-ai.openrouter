@@ -366,3 +366,56 @@ isolated function getExpectedContentParts(string message) returns map<anydata>[]
         }
     ];
 }
+
+isolated function getChatMockResponse(string id, json content, string? finishReason,
+        string? nativeFinishReason = (), string? refusal = (), string? reasoning = (),
+        map<json>? choiceError = (), json[]? toolCalls = ()) returns json {
+    map<json> message = {"role": "assistant", "content": content};
+    if refusal is string {
+        message["refusal"] = refusal;
+    }
+    if reasoning is string {
+        message["reasoning"] = reasoning;
+    }
+    if toolCalls is json[] {
+        message["tool_calls"] = toolCalls;
+    }
+    map<json> choice = {"finish_reason": finishReason, "index": 0, "message": message};
+    if nativeFinishReason is string {
+        choice["native_finish_reason"] = nativeFinishReason;
+    }
+    if choiceError is map<json> {
+        choice["error"] = choiceError;
+    }
+    return {
+        "id": id,
+        "object": "chat.completion",
+        "created": 1234567890,
+        "model": "openai/gpt-5",
+        "choices": [choice],
+        "usage": {"prompt_tokens": 10, "completion_tokens": 512, "total_tokens": 522}
+    };
+}
+
+// Validates that every tool result carries the id of a tool call in the preceding assistant message.
+// Returns the number of tool calls in the last assistant message.
+isolated function validateToolCallIds(json[] messages) returns int|error {
+    string[] toolCallIds = [];
+    foreach json message in messages {
+        map<json> msg = check message.cloneWithType();
+        if msg["role"] == "assistant" {
+            toolCallIds = [];
+            json[] toolCalls = check msg["tool_calls"].cloneWithType();
+            foreach json toolCall in toolCalls {
+                string toolCallId = check toolCall.id.ensureType();
+                toolCallIds.push(toolCallId);
+            }
+        } else if msg["role"] == "tool" {
+            string toolCallId = check msg["tool_call_id"].ensureType();
+            if toolCallIds.indexOf(toolCallId) is () {
+                return error(string `tool_call_id '${toolCallId}' not found in preceding tool calls ${toolCallIds.toString()}`);
+            }
+        }
+    }
+    return toolCallIds.length();
+}

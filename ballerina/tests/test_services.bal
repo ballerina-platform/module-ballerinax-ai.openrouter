@@ -132,6 +132,77 @@ service /llm on new http:Listener(8081) {
             };
         }
 
+        if firstContent == "Solve this hard problem" {
+            // Reasoning model spends the whole token budget on reasoning — no content
+            return getChatMockResponse("chat-length-id", (), "length", nativeFinishReason = "max_tokens",
+                    reasoning = "Let me think step by step...");
+        }
+
+        if firstContent == "Are you there?" {
+            // Empty-string content with no finish reason, e.g. a cold-starting model
+            return getChatMockResponse("chat-empty-id", "", ());
+        }
+
+        if firstContent == "Help me with something disallowed" {
+            // Refusal with no content
+            return getChatMockResponse("chat-refusal-id", (), "stop", refusal = "I can't help with that.");
+        }
+
+        if firstContent == "Describe the weather" {
+            // Content returned as an array of content parts
+            return getChatMockResponse("chat-parts-id",
+                    [{"type": "text", "text": "It is sunny. "}, {"type": "text", "text": "No rain expected."}], "stop");
+        }
+
+        if firstContent == "Trigger an upstream failure" {
+            // Upstream provider error reported on the choice
+            return getChatMockResponse("chat-error-id", (), "error",
+                    choiceError = {"code": 502, "message": "Upstream provider timed out"});
+        }
+
+        if firstContent == "Write something filtered" {
+            // Output blocked by the provider's content filter
+            return getChatMockResponse("chat-filter-id", (), "content_filter");
+        }
+
+        if firstContent == "Stay silent" {
+            // Normal stop with no content, no refusal and no error
+            return getChatMockResponse("chat-stop-id", (), "stop");
+        }
+
+        if firstContent == "Weather in Colombo and Kandy" {
+            if messages.length() == 1 {
+                // Parallel tool calls with provider-issued ids
+                return getChatMockResponse("chat-parallel-id", (), "tool_calls", toolCalls = [
+                    {"id": "call_colombo", "type": "function",
+                        "function": {"name": "get_weather", "arguments": "{\"city\": \"Colombo\"}"}},
+                    {"id": "call_kandy", "type": "function",
+                        "function": {"name": "get_weather", "arguments": "{\"city\": \"Kandy\"}"}}
+                ]);
+            }
+            // Second turn — every tool call must be sent back, each answered by a matching tool result
+            int toolCallCount = check validateToolCallIds(messages);
+            if toolCallCount != 2 {
+                return error(string `Expected 2 tool calls in the assistant message, found ${toolCallCount}`);
+            }
+            return getChatMockResponse("chat-parallel-final-id", "It is sunny in both Colombo and Kandy.", "stop");
+        }
+
+        if firstContent == "What was the weather in Galle?" {
+            // Second turn of a call that had no provider-issued id
+            _ = check validateToolCallIds(messages);
+            return getChatMockResponse("chat-no-id-final-id", "It was sunny in Galle.", "stop");
+        }
+
+        if firstContent == "Find flights to Paris" {
+            // Tool call with empty-string content
+            return getChatMockResponse("chat-tc-empty-id", "", "tool_calls", toolCalls = [{
+                "id": "call_paris",
+                "type": "function",
+                "function": {"name": "book_flight", "arguments": "{\"destination\": \"Paris\"}"}
+            }]);
+        }
+
         return error(string `Unexpected message in chat mock: ${firstContent}`);
     }
 }

@@ -385,3 +385,76 @@ isolated function convertMessageToJson(ai:ChatMessage[]|ai:ChatMessage messages)
     }
     return messages;
 }
+
+# Extracts the text of an assistant response's `content`. OpenRouter normalizes responses to the
+# OpenAI schema, but depending on the upstream provider the content may arrive as a string or as
+# an array of content parts.
+#
+# + content - The raw `content` value of the response message
+# + return - The text content, or `()` when the response carries no non-blank text
+isolated function extractTextContent(anydata content) returns string? {
+    string text = "";
+    if content is string {
+        text = content;
+    } else if content is anydata[] {
+        foreach anydata part in content {
+            if part is map<anydata> && part["type"] == "text" {
+                anydata partText = part["text"];
+                if partText is string {
+                    text += partText;
+                }
+            }
+        }
+    }
+    return text.trim().length() > 0 ? text : ();
+}
+
+# Builds an error message for a response choice that yielded neither text nor a tool call.
+# OpenRouter routes to many upstream providers, so the cause varies: reasoning tokens exhausting
+# the token budget, content filters, refusals, upstream errors or cold-starting models.
+#
+# + modelType - The OpenRouter model the request was sent to
+# + choice - The response choice that yielded no usable content
+# + return - A message naming the finish reason and the likely cause where known
+isolated function buildEmptyResponseMessage(string modelType, openrouter:ChatResponseChoice choice) returns string {
+    string message = string `Model '${modelType}' returned neither content nor a tool call`;
+    anydata finishReason = choice.finish_reason;
+    if finishReason is string {
+        message += string ` (finish_reason: '${finishReason}'`;
+        anydata nativeFinishReason = choice["native_finish_reason"];
+        if nativeFinishReason is string && nativeFinishReason != finishReason {
+            message += string `, native_finish_reason: '${nativeFinishReason}'`;
+        }
+        message += ")";
+    }
+
+    anydata choiceError = choice["error"];
+    if choiceError is map<anydata> && choiceError["message"] is string {
+        return message + string `; the provider reported an error: ${<string>choiceError["message"]}`;
+    }
+    string? refusal = choice.message?.refusal;
+    if refusal is string && refusal.trim().length() > 0 {
+        return message + string `; the model refused the request: ${refusal}`;
+    }
+    if finishReason == "length" {
+        return message + "; the token limit was reached before any output was produced. Reasoning tokens " +
+            "count towards 'maxTokens', so raising 'maxTokens' may resolve this";
+    }
+    if finishReason == "content_filter" {
+        return message + "; the output was blocked by the provider's content filter";
+    }
+    if finishReason is () {
+        return message + "; the model may be warming up or the provider failed to generate output. " +
+            "Retrying the request may resolve this";
+    }
+    return message;
+}
+
+# Returns the id to send for a tool call or a tool result. Uses the provider-issued id when
+# present, and otherwise derives one from the function name, so the assistant tool call and
+# the matching tool result always carry the same id.
+#
+# + id - The provider-issued tool call id, if any
+# + name - The name of the called function
+# + return - The tool call id
+isolated function getToolCallId(string? id, string name) returns string => id ?: "call_" + name;

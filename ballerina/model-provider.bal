@@ -149,13 +149,10 @@ public isolated distinct client class ModelProvider {
             span.close(message);
             return message;
         }
-        if tools.length() > 0 && message.toolCalls is () {
-            string finishInfo = finishReason is string ? string ` (finish_reason: '${finishReason}')` : "";
-            ai:Error err = error ai:LlmInvalidResponseError(
-                string `Model '${self.modelType}' did not return a tool call despite ${tools.length()} ` +
-                string `tool(s) being provided${finishInfo}. The model may not support function calling, ` +
-                "or it chose to respond with plain text. Try a model that supports tool use, or adjust the prompt."
-            );
+        // A reply with neither text nor a tool call is not a valid turn. Returning it as-is would surface as an
+        // opaque downstream failure, or as a silent empty answer when the content is "".
+        if message.content is () && message.toolCalls is () {
+            ai:Error err = error ai:LlmInvalidResponseError(buildEmptyResponseMessage(self.modelType, choices[0]));
             span.close(err);
             return err;
         }
@@ -195,11 +192,11 @@ public isolated distinct client class ModelProvider {
                 openrouter:SystemMessage sysMsg = {role: "system", content: check getChatMessageStringContent(message.content)};
                 chatCompletionRequestMessages.push(sysMsg);
             } else if message is ai:ChatFunctionMessage {
-                // Map legacy function message to tool response; use name as tool_call_id
+                // The tool_call_id must match the id of the tool call in the preceding assistant message
                 openrouter:ToolResponseMessage toolMsg = {
                     role: "tool",
                     content: message.content ?: "",
-                    tool_call_id: message.name
+                    tool_call_id: getToolCallId(message?.id, message.name)
                 };
                 chatCompletionRequestMessages.push(toolMsg);
             }
@@ -212,17 +209,15 @@ public isolated distinct client class ModelProvider {
         openrouter:AssistantMessage assistantMessage = {role: "assistant"};
         ai:FunctionCall[]? toolCalls = message.toolCalls;
         if toolCalls is ai:FunctionCall[] && toolCalls.length() > 0 {
-            ai:FunctionCall functionCall = toolCalls[0];
-            assistantMessage.tool_calls = [
-                {
-                    id: "call_" + functionCall.name,
+            assistantMessage.tool_calls = from ai:FunctionCall functionCall in toolCalls
+                select {
+                    id: getToolCallId(functionCall?.id, functionCall.name),
                     'type: "function",
                     'function: {
                         name: functionCall.name,
                         arguments: functionCall.arguments.toJsonString()
                     }
-                }
-            ];
+                };
         }
         string? content = message?.content;
         if content is string {
@@ -235,9 +230,9 @@ public isolated distinct client class ModelProvider {
     returns ai:ChatAssistantMessage|ai:LlmError {
         do {
             ai:ChatAssistantMessage chatAssistantMessage = {role: ai:ASSISTANT};
-            anydata? rawContent = message?.content;
-            if rawContent is string {
-                chatAssistantMessage.content = rawContent;
+            string? content = extractTextContent(message?.content);
+            if content is string {
+                chatAssistantMessage.content = content;
             }
             openrouter:ChatMessageToolCall[]? toolCalls = message?.tool_calls;
             if toolCalls is openrouter:ChatMessageToolCall[] && toolCalls.length() > 0 {
@@ -246,6 +241,7 @@ public isolated distinct client class ModelProvider {
                 foreach openrouter:ChatMessageToolCall toolCall in toolCalls {
                     json arguments = check toolCall.'function.arguments.fromJsonString();
                     functionCalls.push({
+                        id: toolCall.id,
                         name: toolCall.'function.name,
                         arguments: check arguments.cloneWithType()
                     });
